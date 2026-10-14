@@ -58,3 +58,30 @@ def test_synced_files_open_in_word_and_excel(binder):
             wb.Close(False)
     finally:
         excel.Quit()
+
+
+def test_claimed_references_open_in_word(tmp_path):
+    import shutil
+    from pathlib import Path
+
+    from binder_builder.engine import importer, sync
+
+    legacy = tmp_path / "legacy"
+    shutil.copytree(Path(__file__).parent / "fixtures" / "legacy_binder", legacy)
+    importer.accept(importer.analyze(legacy))
+    hits = importer.claim_scan(legacy)
+    importer.apply_claims(legacy, hits)
+    assert sync.apply(sync.plan(legacy)).ok
+
+    word = _office("Word.Application")
+    try:
+        d = word.Documents.Open(str(legacy / "A_Administration" / "01_North_Star_MRP_Summary.docx"),
+                                ReadOnly=True, AddToRecentFiles=False)
+        try:
+            tags = sorted(d.ContentControls(i + 1).Tag for i in range(d.ContentControls.Count))
+            assert tags == ["bb:ref:social-media-outreach-efforts", "bb:ref:top-10-list"]
+            assert "Complete the Top 10 List (A.03) first" in d.Content.Text
+        finally:
+            d.Close(False)
+    finally:
+        word.Quit()

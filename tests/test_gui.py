@@ -15,10 +15,15 @@ def app(monkeypatch, tmp_path):
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     for name in ("showinfo", "showwarning", "showerror"):
         monkeypatch.setattr(app_mod.messagebox, name, lambda *a, **k: None)
-    try:
-        a = app_mod.App(check_updates=False)
-    except tk.TclError as e:
-        pytest.skip(f"no display: {e}")
+    a = None
+    for attempt in range(3):  # Tk init on Windows occasionally fails to find tk.tcl; it succeeds on retry
+        try:
+            a = app_mod.App(check_updates=False)
+            break
+        except tk.TclError as e:
+            err = e
+    if a is None:
+        pytest.skip(f"no display: {err}")
     a.geometry("1200x760+0+0")
     a.update()
     yield a
@@ -149,3 +154,47 @@ def test_read_only_when_locked_by_someone_else(app, binder):
     assert app.view.banner.winfo_ismapped()
     app.close_binder()
     assert (binder / ".binder" / "binder.lock").exists()  # someone else's lock is left alone
+
+
+def test_import_wizard_end_to_end(app, tmp_path, monkeypatch):
+    import shutil
+    from pathlib import Path
+
+    from binder_builder.gui import binder_view, import_wizard
+
+    monkeypatch.setattr(import_wizard.messagebox, "showinfo", lambda *a, **k: None)
+    monkeypatch.setattr(binder_view.BinderView, "_sync", lambda self: None)  # don't open the modal sync dialog
+    legacy = tmp_path / "Legacy Binder"
+    shutil.copytree(Path(__file__).parent / "fixtures" / "legacy_binder", legacy)
+
+    wiz = import_wizard.ImportWizard(app, legacy)
+    for _ in range(500):
+        _pump(app, 20)
+        if wiz.plan is not None:
+            break
+    assert wiz.plan is not None
+    assert len(wiz.pair_tv.get_children()) == len(wiz.plan.pairs)
+    assert not (legacy / ".binder").exists()  # nothing written yet
+
+    wiz._show_disagreements()
+    _pump(app)
+    wiz._accept()
+    for _ in range(500):
+        _pump(app, 20)
+        if wiz.hits:
+            break
+    assert len(wiz.hits) == 9 and (legacy / ".binder" / "binder.yaml").exists()
+    first = wiz.hits[0].key
+    wiz.claim_tv.event_generate("<ButtonRelease-1>", x=10, y=wiz.claim_tv.bbox(first)[1] + 3)
+    _pump(app)
+    assert first not in wiz.approved  # clicking toggles approval off
+    wiz._claim()
+    for _ in range(500):
+        _pump(app, 20)
+        if app.session is not None:
+            break
+    assert app.session is not None and app.session.folder == legacy
+    import json
+
+    log = json.loads((legacy / ".binder" / "import.json").read_text())
+    assert len(log["claimed"]) == 8 and len(log["unclaimed"]) == 1
