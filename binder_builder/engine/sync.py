@@ -333,6 +333,18 @@ def plan(folder: Path | str) -> Plan:
             if fw.hybrid:
                 actions.append(Action(CHECKLIST, fw.target, "rows for every document", eid))
 
+    # copied documents whose source changed since the copy (SPEC §9.3)
+    for e in layout.items():
+        cf = e.node.get("copied_from") if e.node is not None else None
+        if not cf or not cf.get("source_path"):
+            continue
+        src = Path(cf["source_path"])
+        if not src.is_file():
+            actions.append(Action(WARN, e.rel_path, f"copied from {src}, which can no longer be found", e.entity_id))
+        elif cf.get("source_hash") and file_hash(src) != cf["source_hash"]:
+            actions.append(Action(WARN, e.rel_path, f"source changed since copy ({src}); re-copy from the "
+                                                    "document's details if you want the new version", e.entity_id))
+
     # 5. orphans: files on disk nobody claims (the template folder is the app's)
     claimed_now = {_norm(fw.current) for fw in work.values() if fw.current}
     claimed_now |= {_norm(rel) for rel in located.values()}

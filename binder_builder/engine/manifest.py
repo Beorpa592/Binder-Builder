@@ -47,6 +47,7 @@ class CopiedFrom(_Strict):
     id: str
     synced_at: str
     source_hash: str | None = None
+    source_path: str | None = None  # the exact file copied, for the drift check (SPEC §9.3)
 
 
 class NodeModel(_Strict):

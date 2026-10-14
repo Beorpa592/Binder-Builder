@@ -253,6 +253,68 @@ class BinderSession:
             raise
         self._save()
 
+    # ---- fill from file (SPEC §9.3) -------------------------------------------
+    def fill_from_file(self, node_id: str, source: Path | str, replace: bool = False) -> Path:
+        """Copy any file into this document's position. The source is never modified.
+
+        If the position already has a file, `replace` must be True (the GUI confirms) and the
+        current file is backed up first. The header is taken over on the next sync.
+        """
+        self._check()
+        source = Path(source)
+        node = self.tree.find(node_id)
+        if node.kind != "item":
+            raise ValueError("only documents can be filled from a file")
+        ext = source.suffix.lower().lstrip(".")
+        if ext not in ("docx", "xlsx", "pdf"):
+            raise ValueError(f"{source.name}: only .docx, .xlsx and .pdf files can fill a position")
+        if not source.is_file():
+            raise FileNotFoundError(str(source))
+        if node.get("ext") != ext:
+            node.set("ext", ext)
+            self.manifest.validate()
+        state = sync.load_state(self.folder)
+        entity = self.layout().entity(node_id)
+        current = state["files"].get(node_id, {}).get("path")
+        dest = self.folder / (current if current and (self.folder / current).is_file() and current.endswith(ext)
+                              else entity.rel_path)
+        if dest.exists():
+            if not replace:
+                raise FileExistsError(f"{entity.code} already has a file ({dest.name}); confirm to replace it")
+            backup = sync._backup_dir(self.folder)
+            backup = backup.with_name(backup.name + "_fill")
+            (backup / dest.relative_to(self.folder)).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(dest, backup / dest.relative_to(self.folder))
+        if source.resolve() == dest.resolve():
+            raise ValueError("that file already is this document")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+
+        binder_path, src_id = str(source.parent), ""
+        for parent in source.parents:
+            if manifest_path(parent).is_file():
+                binder_path = str(parent)
+                src_state = sync.load_state(parent)["files"]
+                rel = source.relative_to(parent).as_posix()
+                src_id = next((eid for eid, f in src_state.items() if f.get("path") == rel), "")
+                break
+        from datetime import datetime
+
+        node.set("copied_from", {"binder_path": binder_path, "id": src_id,
+                                 "synced_at": datetime.now().isoformat(timespec="seconds"),
+                                 "source_hash": sync.file_hash(source), "source_path": str(source)})
+        self._save()
+        state["files"][node_id] = {"path": dest.relative_to(self.folder).as_posix()}
+        sync.save_state(self.folder, state)
+        return dest
+
+    def recopy(self, node_id: str) -> Path:
+        """Replace this binder's copy with the current source (backed up first)."""
+        cf = self.tree.find(node_id).get("copied_from")
+        if not cf or not cf.get("source_path"):
+            raise ValueError("this document was not copied from another file")
+        return self.fill_from_file(node_id, cf["source_path"], replace=True)
+
     # ---- templates --------------------------------------------------------
     def export_templates(self) -> list[Path]:
         """Copy the default templates into the binder's template folder so staff can restyle them.
