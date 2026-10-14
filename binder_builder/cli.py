@@ -29,6 +29,35 @@ def _cmd_sync(args) -> int:
     return 0 if result.ok else 2
 
 
+def _cmd_import(args) -> int:
+    from .engine import importer
+
+    plan = importer.analyze(args.folder)
+    print(f"TOC: {plan.toc_file or '(none found)'}\n")
+    print(f"{'CODE':9} {'MATCHED BY':12} {'TITLE':40} FILE")
+    for p in plan.pairs.values():
+        print(f"{(p.code or ''):9} {(p.method or '-'):12} {p.title[:40]:40} {p.file or '(no file)'}")
+    for f in plan.unmatched_files:
+        print(f"{'':9} {'unmatched':12} {'':40} {f}")
+    dis = plan.disagreements()
+    print(f"\n{len(dis)} disagreement(s):")
+    for d in dis:
+        print(f"  {d.file or d.entity_id}: {d.describe()}")
+    for w in plan.warnings:
+        print(f"  warning: {w}")
+    if not args.accept:
+        print("\nNothing changed. Run again with --accept to write .binder/ for this pairing.")
+        return 0
+    importer.accept(plan)
+    print(f"\nWrote {args.folder}/.binder/. Review with 'sync --plan' before the first sync.")
+    if args.claim_all:
+        hits = importer.claim_scan(args.folder)
+        ok = [h for h in hits if h.target_id]
+        r = importer.apply_claims(args.folder, ok, [h for h in hits if not h.target_id])
+        print(f"Claimed {len(r.claimed)} reference(s); {len(r.skipped)} skipped.")
+    return 0
+
+
 def _cmd_backups(args) -> int:
     for b in sync.list_backups(args.folder):
         print(b)
@@ -53,6 +82,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--yes", action="store_true", help="apply without asking")
     s.add_argument("--break-lock", action="store_true", help="break a stale structure lock")
     s.set_defaults(func=_cmd_sync)
+
+    i = sub.add_parser("import", help="pair an existing binder folder with its TOC (changes nothing without --accept)")
+    i.add_argument("folder")
+    i.add_argument("--accept", action="store_true", help="write .binder/ for the proposed pairing")
+    i.add_argument("--claim-all", action="store_true", help="after accepting, claim every resolvable reference")
+    i.set_defaults(func=_cmd_import)
 
     b = sub.add_parser("backups", help="list backups")
     b.add_argument("folder")
