@@ -2,7 +2,7 @@
 
 Everything here is placeholder text. Never put real binder content in this repo.
 
-    python tests/fixtures/make_fixture.py
+    python tests/fixtures/make_fixture.py     # writes synthetic_binder/ and legacy_binder/
 """
 
 from __future__ import annotations
@@ -20,6 +20,14 @@ from reportlab.pdfgen import canvas
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "synthetic_binder"
+LEGACY_OUT = HERE / "legacy_binder"
+
+# Legacy fixture differences (SPEC §14 phase 3): references typed as plain text, one stale
+# header code, one stale filename number, no .binder/ folder.
+LEGACY_NAME_CODES = {"bb_top_10_list": "A.03", "bb_mrp_summary": "A.01", "bb_open_points": "0.01",
+                     "bb_campaign_briefs": "C.02"}
+LEGACY_STALE_HEADER = {"A_Administration/04_Points_of_Contact.docx": "A.05"}
+LEGACY_RENAMES = {"A_Administration/06_Meeting_Minutes.docx": "A_Administration/05_Meeting_Minutes.docx"}
 
 LOREM = (
     "Placeholder text. This paragraph stands in for author-written body content and "
@@ -187,7 +195,7 @@ def _legacy_word_header(section_hf, code: str, title: str, label: str = "Packet 
         section_hf.add_paragraph(line)
 
 
-def make_docx(path: Path, code: str, title: str, extras: dict) -> None:
+def make_docx(path: Path, code: str, title: str, extras: dict, legacy: bool = False) -> None:
     doc = Document()
     sec = doc.sections[0]
     if "locked_text" in extras:
@@ -207,7 +215,10 @@ def make_docx(path: Path, code: str, title: str, extras: dict) -> None:
         for before, target, text, after in extras["refs"]:
             if before:
                 p.add_run(before)
-            p._p.append(_ref_sdt(target, text))
+            if legacy:
+                p.add_run(text)  # typed by hand: not yet a live reference
+            else:
+                p._p.append(_ref_sdt(target, text))
             if after:
                 p.add_run(after)
     if extras.get("table"):
@@ -225,11 +236,13 @@ def _legacy_excel_header(ws, code: str, title: str) -> None:
     ws.oddHeader.right.text = f"Packet Ref # {code}\nPage &P of &N"
 
 
-def make_xlsx(path: Path, code: str, title: str, extras: dict) -> None:
+def make_xlsx(path: Path, code: str, title: str, extras: dict, legacy: bool = False) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = title.replace("/", "-")[:31]
     for row in extras.get("rows", [("Placeholder",)]):
+        if legacy:
+            row = [LEGACY_NAME_CODES.get(v[1:], v) if isinstance(v, str) and v.startswith("=bb_") else v for v in row]
         ws.append(list(row))
     _legacy_excel_header(ws, code, title)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -322,6 +335,24 @@ def build(out: Path = OUT) -> Path:
     return out
 
 
+def build_legacy(out: Path = LEGACY_OUT) -> Path:
+    """The same binder before Binder Builder ever saw it (input for the import tests)."""
+    if out.exists():
+        shutil.rmtree(out)  # regenerating the fixture's own output folder
+    out.mkdir(parents=True)
+    make_root(out)
+    for rel, code, title, extras in DOCS:
+        code = LEGACY_STALE_HEADER.get(rel, code)
+        p = out / LEGACY_RENAMES.get(rel, rel)
+        if p.suffix == ".docx":
+            make_docx(p, code, title, extras, legacy=True)
+        elif p.suffix == ".xlsx":
+            make_xlsx(p, code, title, extras, legacy=True)
+        else:
+            make_pdf(p, title)
+    return out
+
+
 if __name__ == "__main__":
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else OUT
-    print(f"wrote {build(target)}")
+    print(f"wrote {build(OUT)}")
+    print(f"wrote {build_legacy(LEGACY_OUT)}")
