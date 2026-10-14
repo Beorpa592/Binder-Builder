@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from ..engine.codes import ITEM
 from ..engine.session import BinderSession, ReadOnlyError
 
 KIND_NAMES = {"docx": "Word document", "xlsx": "Excel workbook", "pdf": "PDF file"}
+FILL_TYPES = [("Office documents and PDFs", "*.docx *.xlsx *.pdf"), ("Word", "*.docx"), ("Excel", "*.xlsx"),
+              ("PDF", "*.pdf")]
 CHECK_ON, CHECK_OFF = "☑", "☐"
 
 
@@ -358,9 +361,14 @@ class AddNodeDialog(tk.Toplevel):
         else:
             ttk.Label(pos, text="At the end of the Table of Contents").pack(anchor="w")
         row += 1
+        self.fill_source: str | None = None
         if kind == "item":
-            ttk.Button(f, text="Fill from file... (next version)", state="disabled").grid(
-                row=row, column=1, sticky="w", pady=4)
+            fill = ttk.Frame(f)
+            fill.grid(row=row, column=1, sticky="w", pady=4)
+            ttk.Button(fill, text="Fill from file...", command=self._pick_fill).pack(side="left")
+            self.fill_lbl = ttk.Label(fill, text="(optional: copy an existing document into this position)",
+                                      style="Muted.TLabel")
+            self.fill_lbl.pack(side="left", padx=8)
             row += 1
         buttons = ttk.Frame(f)
         buttons.grid(row=row, column=0, columnspan=2, sticky="e", pady=(12, 0))
@@ -378,6 +386,18 @@ class AddNodeDialog(tk.Toplevel):
             return "child"
         return "after"
 
+    def _pick_fill(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Copy which file into this position?",
+                                          filetypes=FILL_TYPES)
+        if not path:
+            return
+        self.fill_source = path
+        p = Path(path)
+        self.fill_lbl.config(text=p.name)
+        self.ext.set(p.suffix.lower().lstrip("."))
+        if not self.text.get().strip():
+            self.text.set(p.stem.split("_", 1)[-1].replace("_", " ") if p.stem[:2].isdigit() else p.stem.replace("_", " "))
+
     def _ok(self) -> None:
         try:
             rel = self.selected
@@ -385,6 +405,8 @@ class AddNodeDialog(tk.Toplevel):
                 if rel is None:
                     raise ValueError("Select a section first: documents go inside sections.")
                 node = self.s.add_document(self.text.get(), self.ext.get(), rel, self.mode.get())
+                if self.fill_source:
+                    self.s.fill_from_file(node.id, self.fill_source)
             elif self.kind == "section":
                 node = self.s.add_section(self.text.get(), rel, self.mode.get())
             else:
@@ -471,7 +493,8 @@ class DetailsPane(ttk.Frame):
                       hint="Keep one row per document in this workbook (Reference/Description columns)")
             cf = node.get("copied_from")
             ttk.Label(form, text="Copied from").grid(row=r, column=0, sticky="nw", pady=3)
-            ttk.Label(form, text=f"{cf['binder_path']} ({cf['id']}) on {cf['synced_at']}" if cf else "-",
+            src = cf.get("source_path") or cf.get("binder_path") if cf else None
+            ttk.Label(form, text=f"{src} on {cf['synced_at'][:16].replace('T', ' ')}" if cf else "-",
                       wraplength=320).grid(row=r, column=1, sticky="w")
             r += 1
         elif node.kind == "section":
@@ -496,6 +519,37 @@ class DetailsPane(ttk.Frame):
         ttk.Button(buttons, text="Save changes", style="Accent.TButton", command=self._save, state=ro).pack(side="left")
         if node.kind == "item":
             ttk.Button(buttons, text="Open file", command=self.view._open_file).pack(side="left", padx=8)
+            ttk.Button(buttons, text="Fill from file...", command=self._fill, state=ro).pack(side="left")
+            if node.get("copied_from"):
+                ttk.Button(buttons, text="Re-copy from source", command=self._recopy, state=ro).pack(
+                    side="left", padx=8)
+
+    def _fill(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Copy which file into this position?",
+                                          filetypes=FILL_TYPES)
+        if not path:
+            return
+        try:
+            self.s.fill_from_file(self.node_id, path)
+        except FileExistsError as e:
+            if not messagebox.askyesno("Replace file?", f"{e}.\n\nReplace it? The current file is backed up first.",
+                                       parent=self):
+                return
+            self.s.fill_from_file(self.node_id, path, replace=True)
+        messagebox.showinfo("Filled", "Copied. The original was not changed. The next sync takes over its header.",
+                            parent=self)
+        self.view.refresh(select=self.node_id)
+        self.view.refresh_status()
+
+    def _recopy(self) -> None:
+        if not messagebox.askyesno("Re-copy from source",
+                                   "Replace this binder's copy with the current version of the source file?\n\n"
+                                   "This binder's copy is backed up first; any edits made to it here are replaced.",
+                                   parent=self):
+            return
+        self.s.recopy(self.node_id)
+        self.view.refresh(select=self.node_id)
+        self.view.refresh_status()
 
     def _save(self) -> None:
         node = self.s.tree.find(self.node_id)
