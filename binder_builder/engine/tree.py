@@ -77,6 +77,8 @@ class Node:
         if seq is None:
             seq = CommentedSeq()
             self.raw["children"] = seq
+        if not seq and isinstance(seq, CommentedSeq):
+            seq.fa.set_block_style()
         return seq
 
     def walk(self) -> Iterator["Node"]:
@@ -91,6 +93,20 @@ class Node:
             p = p.parent
 
 
+# Where each kind may sit: items inside sections (or under another item, as sub-items);
+# sections at top level, under a clarifying header, or nested in a section; headers at
+# top level or inside a section.
+VALID_PARENTS = {
+    "item": ("section", "item"),
+    "section": (None, "header", "section"),
+    "header": (None, "section"),
+}
+
+
+def can_place(kind: str, parent: "Node | None") -> bool:
+    return (parent.kind if parent else None) in VALID_PARENTS[kind]
+
+
 class Tree:
     """The binder tree. Top-level nodes have `parent=None`."""
 
@@ -100,6 +116,8 @@ class Tree:
         if seq is None:
             seq = CommentedSeq()
             manifest.raw["tree"] = seq
+        if not seq:
+            seq.fa.set_block_style()  # an empty `tree: []` must not make every node flow-style
         self._root_seq: CommentedSeq = seq
         self.roots: list[Node] = [Node(r, None) for r in seq]
 
@@ -177,6 +195,13 @@ class Tree:
         node = self.find(node_id)
         if parent_id is not None and parent_id in {n.id for n in node.walk()}:
             raise ValueError("cannot move a node into itself")
+        if not can_place(node.kind, self.find(parent_id) if parent_id else None):
+            where = f"inside {self.find(parent_id).kind} {parent_id!r}" if parent_id else "at the top level"
+            raise ValueError(f"a {node.kind} cannot go {where}")
+        if node.parent is (self.find(parent_id) if parent_id else None):
+            current = self._siblings(node.parent)[0].index(node)
+            if index > current:
+                index -= 1  # removing the node first shifts later positions up
         old_nodes, old_seq = self._siblings(node.parent)
         i = old_nodes.index(node)
         del old_nodes[i]
@@ -189,3 +214,37 @@ class Tree:
         node.parent = parent
         self.manifest.validate()
         return node
+
+    # ---- convenience edits used by the GUI ------------------------------
+    def index_of(self, node: Node) -> int:
+        return self._siblings(node.parent)[0].index(node)
+
+    def move_by(self, node_id: str, delta: int) -> Node:
+        node = self.find(node_id)
+        nodes, _ = self._siblings(node.parent)
+        i = nodes.index(node)
+        j = max(0, min(len(nodes) - 1, i + delta))
+        if i == j:
+            return node
+        target = j + 1 if j > i else j
+        return self.move(node_id, node.parent.id if node.parent else None, target)
+
+    def indent(self, node_id: str) -> Node:
+        """Make the node the last child of its previous sibling."""
+        node = self.find(node_id)
+        nodes, _ = self._siblings(node.parent)
+        i = nodes.index(node)
+        if i == 0:
+            raise ValueError("nothing above to indent under")
+        new_parent = nodes[i - 1]
+        return self.move(node_id, new_parent.id, len(new_parent.children))
+
+    def outdent(self, node_id: str) -> Node:
+        """Move the node out of its parent, to just after the parent."""
+        node = self.find(node_id)
+        parent = node.parent
+        if parent is None:
+            raise ValueError("already at the top level")
+        grand = parent.parent
+        idx = self.index_of(parent) + 1
+        return self.move(node_id, grand.id if grand else None, idx)

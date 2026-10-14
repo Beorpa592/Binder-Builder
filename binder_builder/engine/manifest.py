@@ -152,6 +152,28 @@ def upgrade(raw: CommentedMap) -> bool:
     return changed
 
 
+NEW_BINDER_TEMPLATE = """# Binder Builder manifest. Edit through the app; hand edits are allowed but validated.
+format_version: 1
+binder:
+  name: New Binder
+  header_lines:                      # author-defined, propagated to every document
+    - "{{org_short}}"                # line 1 left; the ref code goes line 1 right automatically
+    - "{{binder_name}}"
+    - "{{doc_title}}"
+  ref_label: "Packet Ref #"
+  vars:
+    org_short: ""
+  footer:
+    left: ""
+    center: ""
+    right: ""
+  page_numbers: per_document
+  cover:
+    lines: []
+tree:
+"""
+
+
 class Manifest:
     """A loaded manifest: the round-trip document plus its validated model."""
 
@@ -173,6 +195,23 @@ class Manifest:
         m = cls(raw, path)
         if upgraded:
             m.save()
+        return m
+
+    @classmethod
+    def create(cls, folder: Path | str, name: str) -> "Manifest":
+        """Write a new, empty binder manifest. Refuses to overwrite an existing one."""
+        path = manifest_path(Path(folder))
+        if path.exists():
+            raise ManifestError(f"{path} already exists")
+        raw = _yaml().load(NEW_BINDER_TEMPLATE)
+        raw["binder"]["name"] = name
+        raw["binder"]["vars"]["org_short"] = name
+        raw["binder"]["cover"]["lines"] = [name]
+        from ruamel.yaml.comments import CommentedSeq
+
+        raw["tree"] = CommentedSeq()
+        m = cls(raw, path)
+        m.save()
         return m
 
     @classmethod
