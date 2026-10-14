@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -301,8 +302,8 @@ def plan(folder: Path | str) -> Plan:
             work[e.entity_id] = FileWork(e, None, e.rel_path, create=True, write=True, hybrid=_hybrid_columns(e))
 
     # 4. in-use check, then content inspection
-    scratch = folder / BINDER_DIR / WORK / "plan"
-    scratch.mkdir(parents=True, exist_ok=True)
+    (folder / BINDER_DIR / WORK).mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(prefix="plan-", dir=folder / BINDER_DIR / WORK))  # one per plan: plans may overlap
     try:
         for eid, fw in list(work.items()):
             e = fw.entity
