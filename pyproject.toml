@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "binder-builder"
+version = "0.1.0"
+description = "Keeps the Word and Excel documents in a physical binder in sync with its Table of Contents."
+requires-python = ">=3.11"
+dependencies = [
+  "ruamel.yaml>=0.18",
+  "pydantic>=2.5",
+  "python-docx>=1.1",
+  "lxml>=5",
+  "openpyxl>=3.1",
+  "docxtpl>=0.16",
+  "pypdf>=4",
+  "reportlab>=4",
+]
+
+[project.optional-dependencies]
+windows = ["pywin32>=306"]
+dev = ["pytest>=8", "pyinstaller>=6"]
+
+[project.scripts]
+binder-builder = "binder_builder.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["binder_builder*"]
+
+[tool.setuptools.package-data]
+binder_builder = ["templates/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
