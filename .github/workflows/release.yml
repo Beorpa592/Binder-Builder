@@ -1,0 +1,35 @@
+# Builds BinderBuilder.exe and attaches the zip to a GitHub Release when a version tag is pushed.
+# Push a tag like v0.2.0 (matching binder_builder.__version__) to publish.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e .[dev,windows]
+      - name: Test
+        run: python -m pytest -q
+      - name: Check tag matches version
+        shell: bash
+        run: |
+          v=$(python -c "import binder_builder; print(binder_builder.__version__)")
+          test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != version v$v"; exit 1; }
+      - name: Build
+        run: python packaging/build.py
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BinderBuilder-*-win64.zip
+          generate_release_notes: true
