@@ -26,3 +26,27 @@ and the CLI. There is also a synthetic fixture binder with its generator.
 **Deviations:** DEVIATIONS.md items 1–27. The ones with real consequences:
 - Workbooks containing charts, images, pivots or macros are never written (#25).
 - Files renamed by hand in Explorer show up as orphans (#17).
+
+## Phase 1: Generated documents and checklist (tag `phase-1`)
+
+**Built:** `engine/generate/` (binder cover, section covers, TOC, tabs, hybrid checklist),
+a default template set with its builder (`binder_builder/templates/`), template-folder
+override with change detection, `regenerate` and `checklist_rows` actions in sync, and
+text-dump goldens (`tests/fixtures/golden/`, rebuilt by `make_golden.py`).
+
+**Acceptance (all passing, 60 tests total):**
+- Generated files match the golden fixtures: binder cover, TOC, CKL, Tabs and all six section covers.
+- CKL user columns survive three syncs with reorders (section swap, cross-section
+  move, insertion), plus a user re-sort and a free user row. Each document keeps exactly
+  one row, the new one lands after its sibling, and the next plan is empty.
+- Tabs warn on a 40-character label, and overflow appends a second table copy.
+- Plus: removed documents are flagged `[removed]`, a CKL with user formulas gets rows
+  appended rather than inserted, a missing CKL is rebuilt from the template, the
+  template folder overrides defaults and triggers regeneration, and backups include
+  regenerated docs.
+- Manually verified in real Office through COM. CKL names evaluate (`TOC`, `CKL`, `0.00`,
+  `0.01`), the `bb_id` column is hidden, TOC codes are text, and generated docs open.
+
+**Deviations:** DEVIATIONS.md items 28–40. The ones with real consequences:
+- Templates live in `.binder/templates/`, not as the output files (#28).
+- A checklist with user formulas gets new rows at the end rather than after their sibling (#37).
