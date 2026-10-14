@@ -351,6 +351,17 @@ def header_text(path: Path | str) -> str:
     return "\n---\n".join(out)
 
 
+def full_signature(path: Path | str) -> str:
+    """Everything a document shows, for comparing generated documents: body (control text
+    included) plus every app-owned header and footer part."""
+    doc = Document(str(path))
+    parts = [_part_signature(doc.element.body)]
+    for hdr, ftr in _targets(doc):
+        parts.append(_current_signature(hdr) or "")
+        parts.append(_current_signature(ftr) or "")
+    return "\n---\n".join(parts)
+
+
 # ---- references (SPEC §6.1) -------------------------------------------------
 
 @dataclass

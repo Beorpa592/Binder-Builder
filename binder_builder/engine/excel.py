@@ -27,8 +27,12 @@ _UNSAFE = re.compile(
 _NAME_REF = re.compile(r"(?<![A-Za-z0-9_.])(bb_[A-Za-z0-9_]+)", re.IGNORECASE)
 
 
-def name_for(node_id: str) -> str:
-    return NAME_PREFIX + node_id.replace("-", "_")
+def name_for(entity_id: str) -> str:
+    """`top-10-list` -> `bb_top_10_list`; generated documents: `#toc` -> `bb__toc`, `admin#cover` -> `bb_admin__cover`."""
+    s = entity_id.replace("-", "_")
+    if s.startswith("#"):
+        return NAME_PREFIX + "_" + s[1:]
+    return NAME_PREFIX + s.replace("#", "__")
 
 
 def unsafe_parts(path: Path | str) -> list[str]:
@@ -56,10 +60,12 @@ def _norm(value) -> str:
     return f"{type(value).__name__}:{value!r}"
 
 
-def body_hash_wb(wb) -> str:
+def body_hash_wb(wb, skip: tuple[str, ...] = ()) -> str:
     h = hashlib.sha256()
     # Stricter than SPEC §7.4: hidden user sheets are hashed too (see DEVIATIONS.md).
     for ws in _user_sheets(wb):
+        if ws.title in skip:
+            continue
         h.update(f"\x1d{ws.title}\x1d".encode())
         for row in ws.iter_rows():
             for c in row:
@@ -248,21 +254,47 @@ class BookState:
 
 
 def inspect(path: Path | str, spec: HeaderSpec | None, rows: list[tuple[str, str, str, str]]) -> BookState:
-    wb = load(path)
+    return inspect_wb(load(path), spec, rows)
+
+
+def inspect_wb(wb, spec: HeaderSpec | None, rows: list[tuple[str, str, str, str]]) -> BookState:
     ok = True if spec is None else header_matches(wb, spec)
     want, broken = full_rows(wb, rows)
     return BookState(ok, binder_sheet_matches(wb, want), broken)
 
 
-def update(src: Path | str, dest: Path | str, spec: HeaderSpec | None,
-           rows: list[tuple[str, str, str, str]]) -> None:
-    wb = load(src)
+def apply_to_wb(wb, spec: HeaderSpec | None, rows: list[tuple[str, str, str, str]]) -> None:
+    """Stamp the header (unless spec is None) and bring `_binder` and the bb_ names up to date."""
     if spec is not None and not header_matches(wb, spec):
         write_header(wb, spec)
     want, _ = full_rows(wb, rows)
     if not binder_sheet_matches(wb, want):
         write_binder_sheet(wb, want)
+
+
+def update(src: Path | str, dest: Path | str, spec: HeaderSpec | None,
+           rows: list[tuple[str, str, str, str]]) -> None:
+    wb = load(src)
+    apply_to_wb(wb, spec, rows)
     wb.save(str(dest))
+
+
+def full_signature(path: Path | str) -> str:
+    """Everything a workbook shows, for comparing generated documents: every sheet's cells,
+    visibility and header/footer, plus defined names."""
+    wb = load(path)
+    out = []
+    for ws in wb.worksheets:
+        out.append(f"## {ws.title} [{ws.sheet_state}]")
+        for hdr, ftr in _header_targets(ws):
+            out.append(f"H {_parts(hdr)} F {_parts(ftr)}")
+        for row in ws.iter_rows():
+            for c in row:
+                if c.value is not None:
+                    out.append(f"{c.coordinate}={_norm(c.value)}")
+    for name, dn in sorted(wb.defined_names.items()):
+        out.append(f"N {name}={dn.attr_text}")
+    return "\n".join(out)
 
 
 _BAD_SHEET_CHARS = re.compile(r"[\[\]:*?/\\]")
