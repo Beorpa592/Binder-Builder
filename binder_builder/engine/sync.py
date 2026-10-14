@@ -4,8 +4,10 @@ Safety rules (SPEC §1.1) enforced here:
   * no user file is ever deleted; removed TOC rows leave files in place as orphans
   * every change is listed in the plan before apply
   * every file about to be modified or moved is copied into .binder/backups/<ts>/ first
-  * every Word/Excel write goes to a temp file, is body-hashed against the original,
-    and only replaces the original if the hashes match
+  * every write to an author's Word/Excel file goes to a temp file, is body-hashed
+    against the original, and only replaces the original if the hashes match.
+    Hybrid workbooks (the checklist) use the user-column hash instead. Generated
+    documents (TOC, covers, tabs) are app-owned and replaced wholesale.
 """
 
 from __future__ import annotations
@@ -19,7 +21,9 @@ from datetime import datetime
 from pathlib import Path
 
 from . import excel, word
-from .codes import CKL, ITEM, SECTION_COVER, TOC, Entity, Layout, compute_layout, header_spec
+from .codes import BINDER_COVER, CKL, ITEM, Entity, Layout, compute_layout, header_spec
+from .generate import CKL_TEMPLATE, GENERATED, GenContext, content_signature, render, template_hash
+from .generate import checklist
 from .manifest import BINDER_DIR, Manifest
 from .storage import LocalFolderStorage
 from .storage.local_folder import current_user
@@ -41,8 +45,7 @@ WARN = "warn"
 CHANGE_KINDS = (MOVE, CREATE, STAMP, REFS, REGENERATE, CHECKLIST)
 ACTION_ORDER = {k: i for i, k in enumerate(CHANGE_KINDS + (ORPHAN, WARN))}
 
-# Entities created blank when missing in this phase (covers and tabs are generated in phase 1).
-CREATABLE = (ITEM, SECTION_COVER, TOC, CKL)
+CREATABLE = (ITEM, CKL)  # created when missing; generated documents are rendered instead
 IGNORED_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
 
 
@@ -67,7 +70,9 @@ class FileWork:
     target: str
     move: bool = False
     create: bool = False
-    write: bool = False  # header stamp and/or ref update needed
+    write: bool = False  # header stamp, ref update and/or checklist rows needed
+    regenerate: bool = False  # generated document to be re-rendered
+    hybrid: tuple[str, str] | None = None  # (reference heading, description heading)
 
 
 @dataclass
@@ -166,17 +171,15 @@ def _in_use(path: Path) -> bool:
     try:
         with open(path, "r+b"):
             return False
-    except PermissionError:
-        return True
     except OSError:
         return True
 
 
-def _disk_files(folder: Path) -> list[str]:
+def _disk_files(folder: Path, skip_dirs: set[str]) -> list[str]:
     out = []
     for root, dirs, files in os.walk(folder):
         rel_root = Path(root).relative_to(folder)
-        dirs[:] = [d for d in dirs if not (rel_root == Path(".") and d == BINDER_DIR)]
+        dirs[:] = [d for d in dirs if (rel_root / d).as_posix() not in skip_dirs]
         for f in files:
             if f.startswith("~$") or f.lower() in IGNORED_NAMES:
                 continue
@@ -185,7 +188,7 @@ def _disk_files(folder: Path) -> list[str]:
 
 
 def binder_rows(tree: Tree, layout: Layout) -> list[tuple[str, str, str, str]]:
-    """Rows of the `_binder` sheet: one per coded node, in tree order."""
+    """Rows of the `_binder` sheet: every coded node in tree order, then coded generated documents."""
     rows = []
     folders = {s.node.id: s.folder.rsplit("/", 1)[-1] for s in layout.sections}
     for n in tree.walk():
@@ -193,15 +196,46 @@ def binder_rows(tree: Tree, layout: Layout) -> list[tuple[str, str, str, str]]:
         if code is None:
             continue
         e = layout.entity(n.id)
-        fname = e.filename if e else folders.get(n.id, "")
-        rows.append((n.id, code, n.text, fname))
+        rows.append((n.id, code, n.text, e.filename if e else folders.get(n.id, "")))
+    for e in layout.entities:
+        if e.kind != ITEM and e.code:
+            rows.append((e.entity_id, e.code, e.title, e.filename))
     return rows
+
+
+def checklist_specs(layout: Layout, items_only: bool = False) -> list[checklist.RowSpec]:
+    """Documents that get a checklist row, in TOC order (SPEC §8.1: TOC, CKL, covers and tabs too)."""
+    out = []
+    for e in layout.entities:
+        if e.kind == BINDER_COVER or (items_only and e.kind != ITEM):
+            continue
+        out.append(checklist.RowSpec(e.entity_id, e.code, e.title, e.included))
+    return out
+
+
+def _hybrid_columns(e: Entity) -> tuple[str, str] | None:
+    if e.kind == CKL:
+        return checklist.REFERENCE, checklist.DESCRIPTION
+    if e.kind == ITEM and e.ext == "xlsx" and e.node is not None and e.node.get("hybrid_rows"):
+        cols = list(e.node.get("hybrid_columns") or [checklist.REFERENCE, checklist.DESCRIPTION])
+        return cols[0], cols[1]
+    return None
 
 
 def _spec_for(e: Entity, manifest: Manifest):
     if not e.stamp or e.locked_header:
         return None
     return header_spec(e, manifest.binder)
+
+
+def _render_generated(e: Entity, ctx: GenContext, out: Path, rows) -> None:
+    """Render a generated document and stamp its header: the full desired file."""
+    render(e, ctx, out)
+    spec = _spec_for(e, ctx.manifest)
+    if e.ext == "docx":
+        word.update(out, out, spec, ctx.layout.codes)
+    else:
+        excel.update(out, out, spec, rows)
 
 
 # ---- plan -------------------------------------------------------------------
@@ -212,6 +246,7 @@ def plan(folder: Path | str) -> Plan:
     tree = Tree(manifest)
     layout = compute_layout(tree, manifest.binder)
     rows = binder_rows(tree, layout)
+    ctx = GenContext(folder, manifest, tree, layout)
     state = load_state(folder)
     actions: list[Action] = [Action(WARN, "", w) for w in layout.warnings]
 
@@ -243,7 +278,7 @@ def plan(folder: Path | str) -> Plan:
         cur = located.get(e.entity_id)
         if cur is None:
             continue
-        fw = FileWork(e, cur, cur)
+        fw = FileWork(e, cur, cur, hybrid=_hybrid_columns(e))
         if cur != e.rel_path:
             tgt = _norm(e.rel_path)
             if exists(e.rel_path) and tgt != _norm(cur) and tgt not in sources:
@@ -253,71 +288,116 @@ def plan(folder: Path | str) -> Plan:
                 sources.discard(_norm(cur))
         work[e.entity_id] = fw
 
-    # 3. creates
+    # 3. missing files: create blank items/checklist, render generated documents
     for e in layout.entities:
         if e.entity_id in located:
             continue
-        if e.kind not in CREATABLE:
-            continue
-        if e.ext == "pdf":
-            actions.append(Action(WARN, e.rel_path, f"{e.code} {e.title}: PDF item needs a file", e.entity_id))
-            continue
-        work[e.entity_id] = FileWork(e, None, e.rel_path, create=True, write=True)
+        if e.kind in GENERATED:
+            work[e.entity_id] = FileWork(e, None, e.rel_path, regenerate=True)
+        elif e.kind in CREATABLE:
+            if e.ext == "pdf":
+                actions.append(Action(WARN, e.rel_path, f"{e.code} {e.title}: PDF item needs a file", e.entity_id))
+                continue
+            work[e.entity_id] = FileWork(e, None, e.rel_path, create=True, write=True, hybrid=_hybrid_columns(e))
 
     # 4. in-use check, then content inspection
-    for eid, fw in list(work.items()):
-        if fw.create:
-            continue
-        path = folder / fw.current
-        if (fw.move or fw.entity.ext in ("docx", "xlsx")) and _in_use(path):
-            actions.append(Action(WARN, fw.current, "open in Word/Excel by someone; skipped, re-sync later", eid))
-            work[eid] = FileWork(fw.entity, fw.current, fw.current)
-            continue
-        e = fw.entity
-        spec = _spec_for(e, manifest)
-        if e.ext == "docx":
-            st = word.inspect(path, spec, layout.codes)
-            if not st.header_ok:
-                fw.write = True
-                actions.append(Action(STAMP, fw.target, f"header -> {e.code}", eid))
-            if st.stale_refs:
-                fw.write = True
-                detail = ", ".join(f"{r.target_id}: {r.current or '(empty)'} -> {r.desired}" for r in st.stale_refs)
-                actions.append(Action(REFS, fw.target, detail, eid))
-            for r in st.broken_refs:
-                actions.append(Action(WARN, fw.target, f"broken reference to {r.target_id!r} in: {r.context!r}", eid))
-        elif e.ext == "xlsx":
-            bad = excel.unsafe_parts(path)
-            if bad:
-                actions.append(Action(WARN, fw.current,
-                                      f"contains {', '.join(bad)} which cannot be saved safely; header and refs not updated",
-                                      eid))
-            else:
-                st = excel.inspect(path, spec, rows)
-                if not st.header_ok:
-                    fw.write = True
-                    actions.append(Action(STAMP, fw.target, f"header -> {e.code}", eid))
-                if not st.refs_ok:
-                    fw.write = True
-                    actions.append(Action(REFS, fw.target, "_binder sheet and bb_ names", eid))
-                for name, cells in st.broken.items():
-                    actions.append(Action(WARN, fw.target, f"broken reference {name} in {', '.join(cells)}", eid))
-        if fw.move:
-            actions.append(Action(MOVE, fw.current, f"-> {fw.target}", eid, fw.target))
+    scratch = folder / BINDER_DIR / WORK / "plan"
+    scratch.mkdir(parents=True, exist_ok=True)
+    try:
+        for eid, fw in list(work.items()):
+            e = fw.entity
+            if fw.current is None:
+                if fw.regenerate:
+                    actions.append(Action(REGENERATE, fw.target, f"create {e.title}", eid))
+                continue
+            path = folder / fw.current
+            if (fw.move or e.ext in ("docx", "xlsx")) and _in_use(path):
+                actions.append(Action(WARN, fw.current, "open in Word/Excel by someone; skipped, re-sync later", eid))
+                work[eid] = FileWork(e, fw.current, fw.current)
+                continue
+            if e.kind in GENERATED:
+                _inspect_generated(fw, ctx, rows, state, scratch, actions)
+            elif e.ext == "docx":
+                _inspect_docx(fw, path, manifest, layout, actions)
+            elif e.ext == "xlsx":
+                _inspect_xlsx(fw, path, manifest, layout, rows, actions)
+            if fw.move:
+                actions.append(Action(MOVE, fw.current, f"-> {fw.target}", eid, fw.target))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)  # the app's own scratch renders
 
     for eid, fw in work.items():
         if fw.create:
             actions.append(Action(CREATE, fw.target, f"{fw.entity.code or ''} {fw.entity.title}".strip(), eid))
+            if fw.hybrid:
+                actions.append(Action(CHECKLIST, fw.target, "rows for every document", eid))
 
-    # 5. orphans: files on disk nobody claims
+    # 5. orphans: files on disk nobody claims (the template folder is the app's)
     claimed_now = {_norm(fw.current) for fw in work.values() if fw.current}
     claimed_now |= {_norm(rel) for rel in located.values()}
-    for rel in _disk_files(folder):
+    skip = {BINDER_DIR, ctx.template_folder().relative_to(folder).as_posix()}
+    for rel in _disk_files(folder, skip):
         if _norm(rel) not in claimed_now:
             actions.append(Action(ORPHAN, rel, "not in the TOC; left in place"))
 
     actions.sort(key=lambda a: ACTION_ORDER[a.kind])
     return Plan(folder, actions, layout, work, rows)
+
+
+def _inspect_generated(fw: FileWork, ctx: GenContext, rows, state, scratch: Path, actions: list[Action]) -> None:
+    e = fw.entity
+    tpl = ctx.template_for(e)
+    reasons = []
+    if state["files"].get(e.entity_id, {}).get("template") not in (None, template_hash(tpl)):
+        reasons.append("template changed")
+    out = scratch / f"{e.entity_id.replace('#', '_')}.{e.ext}"
+    _render_generated(e, ctx, out, rows)
+    if content_signature(out) != content_signature(ctx.folder / fw.current):
+        reasons.append("content differs from the TOC")
+    if reasons:
+        fw.regenerate = True
+        actions.append(Action(REGENERATE, fw.target, f"{e.title}: {', '.join(reasons)}", e.entity_id))
+
+
+def _inspect_docx(fw: FileWork, path: Path, manifest: Manifest, layout: Layout, actions: list[Action]) -> None:
+    e, eid = fw.entity, fw.entity.entity_id
+    st = word.inspect(path, _spec_for(e, manifest), layout.codes)
+    if not st.header_ok:
+        fw.write = True
+        actions.append(Action(STAMP, fw.target, f"header -> {e.code}", eid))
+    if st.stale_refs:
+        fw.write = True
+        detail = ", ".join(f"{r.target_id}: {r.current or '(empty)'} -> {r.desired}" for r in st.stale_refs)
+        actions.append(Action(REFS, fw.target, detail, eid))
+    for r in st.broken_refs:
+        actions.append(Action(WARN, fw.target, f"broken reference to {r.target_id!r} in: {r.context!r}", eid))
+
+
+def _inspect_xlsx(fw: FileWork, path: Path, manifest: Manifest, layout: Layout, rows, actions: list[Action]) -> None:
+    e, eid = fw.entity, fw.entity.entity_id
+    bad = excel.unsafe_parts(path)
+    if bad:
+        actions.append(Action(WARN, fw.current,
+                              f"contains {', '.join(bad)} which cannot be saved safely; header and refs not updated", eid))
+        return
+    wb = excel.load(path)
+    if fw.hybrid:
+        # Rows first: a removed row's =bb_ formula becomes [removed] and must not count as a reference.
+        ch = checklist.sync(wb, checklist_specs(layout, items_only=e.kind == ITEM), *fw.hybrid)
+        if ch.error:
+            actions.append(Action(WARN, fw.target, ch.error, eid))
+        elif ch.any:
+            fw.write = True
+            actions.append(Action(CHECKLIST, fw.target, ch.describe(), eid))
+    st = excel.inspect_wb(wb, _spec_for(e, manifest), rows)
+    if not st.header_ok:
+        fw.write = True
+        actions.append(Action(STAMP, fw.target, f"header -> {e.code}", eid))
+    if not st.refs_ok:
+        fw.write = True
+        actions.append(Action(REFS, fw.target, "_binder sheet and bb_ names", eid))
+    for name, cells in st.broken.items():
+        actions.append(Action(WARN, fw.target, f"broken reference {name} in {', '.join(cells)}", eid))
 
 
 # ---- apply ------------------------------------------------------------------
@@ -340,39 +420,69 @@ def _backup_dir(folder: Path) -> Path:
 def _remove_empty_dirs(folder: Path, rels: set[str]) -> None:
     """Remove folders left empty by moves. Only empty directories; never files."""
     for rel in sorted(rels, key=lambda r: -r.count("/")):
-        d = (folder / rel)
+        d = folder / rel
         while d != folder and d.is_dir() and not any(d.iterdir()):
             d.rmdir()
             d = d.parent
+
+
+def _write_file(fw: FileWork, dst: Path, tmp: Path, p: Plan, manifest: Manifest) -> str | None:
+    """Stamp/refs/checklist into `tmp`, verify the invariant, then replace `dst`. Returns a failure or None."""
+    e = fw.entity
+    spec = _spec_for(e, manifest)
+    if e.ext == "docx":
+        before = word.body_hash(dst)
+        word.update(dst, tmp, spec, p.layout.codes)
+        after = word.body_hash(tmp)
+    elif fw.hybrid:
+        wb = excel.load(dst)
+        before = checklist.user_hash(wb, *fw.hybrid)
+        ch = checklist.sync(wb, checklist_specs(p.layout, items_only=e.kind == ITEM), *fw.hybrid)
+        excel.apply_to_wb(wb, spec, p.rows)
+        wb.save(str(tmp))
+        after = checklist.user_hash(excel.load(tmp), *fw.hybrid)
+        if ch.error:
+            return f"{fw.target}: {ch.error}"
+    else:
+        before = excel.body_hash(dst)
+        excel.update(dst, tmp, spec, p.rows)
+        after = excel.body_hash(tmp)
+    if after != before:
+        return f"{fw.target}: body changed during write; original kept (invariant check)"
+    os.replace(tmp, dst)
+    return None
 
 
 def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
     folder = p.folder
     storage = LocalFolderStorage(folder)
     manifest = storage.open()
+    tree = Tree(manifest)
+    ctx = GenContext(folder, manifest, tree, p.layout)
     acquired = storage.lock(force=force_lock, max_age_hours=manifest.binder.lock_max_age_hours)
     result = ApplyResult(backup=None)
+    work_dir = folder / BINDER_DIR / WORK
     try:
-        touched = [fw for fw in p.work.values() if not fw.create and (fw.move or fw.write)]
+        # 1. snapshot every existing file that will be moved or modified
+        touched = [fw for fw in p.work.values() if fw.current and (fw.move or fw.write or fw.regenerate)]
         backup = _backup_dir(folder)
         index = []
-        if touched:
-            for fw in touched:
-                dest = backup / fw.current
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(folder / fw.current, dest)
-                index.append({"path": fw.current, "moved_to": fw.target if fw.move else None,
-                              "entity_id": fw.entity.entity_id})
-        created = [fw for fw in p.work.values() if fw.create]
+        for fw in touched:
+            dest = backup / fw.current
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(folder / fw.current, dest)
+            index.append({"path": fw.current, "moved_to": fw.target if fw.move else None,
+                          "entity_id": fw.entity.entity_id})
+        created = [fw for fw in p.work.values() if fw.current is None]
         if index or created:
             backup.mkdir(parents=True, exist_ok=True)
             (backup / "index.json").write_text(json.dumps({
                 "files": index, "created": [fw.target for fw in created]}, indent=2), encoding="utf-8")
-            result.backup = backup.name
             if state_path(folder).exists():
                 shutil.copy2(state_path(folder), backup / "_state.json")
+            result.backup = backup.name
 
-        # moves: two-phase through temporary names so chains and swaps never collide
+        # 2. moves: two-phase through temporary names so chains and swaps never collide
         moves = [fw for fw in touched if fw.move]
         staged = []
         for i, fw in enumerate(moves):
@@ -395,67 +505,71 @@ def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
                 os.rename(tmp, dst)
                 if file_hash(dst) != before:
                     raise OSError("content changed during move")
-                emptied.add(fw.current.rsplit("/", 1)[0] if "/" in fw.current else "")
+                if "/" in fw.current:
+                    emptied.add(fw.current.rsplit("/", 1)[0])
                 result.applied.append(Action(MOVE, fw.current, f"-> {fw.target}", fw.entity.entity_id, fw.target))
             except OSError as e:
                 os.rename(tmp, folder / fw.current)
                 result.failures.append(f"move {fw.current} -> {fw.target}: {e}")
                 fw.target = fw.current
-        _remove_empty_dirs(folder, {r for r in emptied if r})
+        _remove_empty_dirs(folder, emptied)
 
-        # creates
+        # 3. creates
         for fw in created:
+            if fw.regenerate:
+                continue
             dst = folder / fw.target
             dst.parent.mkdir(parents=True, exist_ok=True)
             if dst.exists():
                 result.failures.append(f"create {fw.target}: a file is already there")
+                fw.write = False
                 continue
-            if fw.entity.ext == "docx":
+            if fw.entity.kind == CKL:
+                shutil.copy2(ctx.template(CKL_TEMPLATE), dst)
+            elif fw.entity.ext == "docx":
                 word.create_blank(dst)
             else:
                 excel.create_blank(dst, fw.entity.title)
             result.applied.append(Action(CREATE, fw.target, fw.entity.title, fw.entity.entity_id))
 
-        # header stamps and refs, each through the body invariant check
-        work_dir = folder / BINDER_DIR / WORK
+        # 4. header stamps and refs, each through the body invariant check (hybrids last)
         work_dir.mkdir(parents=True, exist_ok=True)
-        for fw in p.work.values():
-            if not fw.write:
-                continue
-            dst = folder / fw.target
-            if not dst.exists():
-                continue
+        writes = sorted((fw for fw in p.work.values() if fw.write), key=lambda fw: fw.hybrid is not None)
+        regens = [fw for fw in p.work.values() if fw.regenerate]
+        for fw in [w for w in writes if not w.hybrid]:
+            _apply_write(fw, p, manifest, work_dir, result)
+
+        # 5. regenerated documents (app-owned: replaced wholesale, snapshot already taken)
+        for fw in regens:
             e = fw.entity
-            spec = _spec_for(e, manifest)
-            tmp = work_dir / f"{e.entity_id.replace('#', '_')}.{e.ext}"
+            dst = folder / fw.target
+            tmp = work_dir / f"gen_{e.entity_id.replace('#', '_')}.{e.ext}"
             try:
-                before = body_hash(dst)
-                if e.ext == "docx":
-                    word.update(dst, tmp, spec, p.layout.codes)
-                else:
-                    excel.update(dst, tmp, spec, p.rows)
-                after = body_hash(tmp)
-                if after != before:
-                    result.failures.append(f"{fw.target}: body changed during write; original kept (invariant check)")
-                    continue
+                _render_generated(e, ctx, tmp, p.rows)
+                dst.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(tmp, dst)
-                result.applied.append(Action(STAMP, fw.target, "header/refs updated", e.entity_id))
-            except Exception as ex:  # noqa: BLE001 - report and keep going; original untouched
-                result.failures.append(f"{fw.target}: {ex}")
+                result.applied.append(Action(REGENERATE, fw.target, e.title, e.entity_id))
+            except Exception as ex:  # noqa: BLE001 - report and keep going
+                result.failures.append(f"regenerate {fw.target}: {ex}")
             finally:
                 if tmp.exists():
-                    tmp.unlink()  # our own scratch copy
+                    tmp.unlink()  # our own scratch render
 
-        # state
+        # 6. checklist rows (hybrid workbooks)
+        for fw in [w for w in writes if w.hybrid]:
+            _apply_write(fw, p, manifest, work_dir, result)
+
+        # 7. state
         state = load_state(folder)
         files = {}
         for e in p.layout.entities:
             fw = p.work.get(e.entity_id)
-            rel = fw.target if fw else None
-            if rel is None and (folder / e.rel_path).is_file():
-                rel = e.rel_path
+            rel = fw.target if fw else e.rel_path
             if rel and (folder / rel).is_file():
-                files[e.entity_id] = {"path": rel, "hash": file_hash(folder / rel)}
+                entry = {"path": rel, "hash": file_hash(folder / rel)}
+                if e.kind in GENERATED:
+                    entry["template"] = template_hash(ctx.template_for(e))
+                files[e.entity_id] = entry
         state["files"] = files
         save_state(folder, state)
 
@@ -472,6 +586,26 @@ def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
         if acquired:
             storage.unlock()
     return result
+
+
+def _apply_write(fw: FileWork, p: Plan, manifest: Manifest, work_dir: Path, result: ApplyResult) -> None:
+    dst = p.folder / fw.target
+    if not dst.exists():
+        return
+    e = fw.entity
+    tmp = work_dir / f"{e.entity_id.replace('#', '_')}.{e.ext}"
+    try:
+        failure = _write_file(fw, dst, tmp, p, manifest)
+        if failure:
+            result.failures.append(failure)
+        else:
+            kind = CHECKLIST if fw.hybrid else STAMP
+            result.applied.append(Action(kind, fw.target, "header/refs updated", e.entity_id))
+    except Exception as ex:  # noqa: BLE001 - report and keep going; original untouched
+        result.failures.append(f"{fw.target}: {ex}")
+    finally:
+        if tmp.exists():
+            tmp.unlink()  # our own scratch copy
 
 
 # ---- restore ------------------------------------------------------------------
