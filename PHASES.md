@@ -50,3 +50,28 @@ text-dump goldens (`tests/fixtures/golden/`, rebuilt by `make_golden.py`).
 **Deviations:** DEVIATIONS.md items 28–40. The ones with real consequences:
 - Templates live in `.binder/templates/`, not as the output files (#28).
 - A checklist with user formulas gets new rows at the end rather than after their sibling (#37).
+
+## Phase 2: GUI (tag `phase-2`, version 0.2.0)
+
+**Built:** `engine/session.py` (GUI-free controller), the tkinter screens (`gui/app.py`,
+`start.py`, `binder_view.py`, `settings.py`, `sync_view.py`, `print_view.py`, with
+`import_wizard.py` as a phase 3 placeholder), the lock-file workflow, `updater.py`, the
+PyInstaller build (`packaging/build.py`, which makes `dist/BinderBuilder/BinderBuilder.exe`
+and a release zip), and the GitHub release workflow.
+
+**Acceptance (all passing, 78 tests total):**
+- Scenario through the session: five sections and twelve documents, sync, author edits,
+  two sections reordered, sync again. Files, headers, TOC, covers and tabs are correct, and
+  author body hashes are unchanged.
+- GUI smoke tests on real widgets: open/close (the lock is released), toolbar moves,
+  include toggle, details rename, a real drag-and-drop with the live code shown, the sync
+  dialog plans and applies, settings save, and read-only mode under someone else's lock.
+- Synced files open in real Word and Excel. Headers show, `Page 1 of 1` computes, and
+  `=bb_` names evaluate.
+- The packaged exe was built and launched: the window opened as "Binder Builder 0.2.0"
+  with no errors, `--cli sync --apply` ran a full sync from the frozen build, and the
+  next plan was empty.
+- Not done: a hands-on test with a non-technical user (DEVIATIONS #55), and a real
+  GitHub release run (nothing has been pushed).
+
+**Deviations:** DEVIATIONS.md items 41–55.

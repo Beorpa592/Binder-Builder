@@ -65,3 +65,33 @@ choice and the reason for it. Ben can overrule any of them.
 38. **The checklist invariant is order-independent.** It is a hash of every user-owned cell, grouped by row and sorted, plus every other sheet's full body hash. Rows may be inserted or re-sorted, but no user value may change.
 39. **Legacy adoption.** When a checklist has no `bb_id` column yet, rows whose Reference text equals a current code (float `0.01` accepted) are claimed for that document, and other rows stay user rows. *Assumption:* the manifest's codes match the legacy checklist at adoption time, which holds right after an import.
 40. **Hybrid rows on other workbooks:** `hybrid_rows: true` plus `hybrid_columns: [<reference heading>, <description heading>]` (default `Reference`, `Description`). These get one row per item document.
+
+## Phase 2
+
+### Structure
+41. **`engine/session.py` is new (not in §13).** It is the GUI-free controller behind every screen: it opens a binder, holds the lock, makes validated edits that save themselves, computes live codes and runs plan/apply/restore. The tkinter modules only present it, so a PySide front end could reuse it unchanged, and the screens are testable without clicking.
+42. **Structure edits save the manifest immediately.** There is no "Save" for the tree, so nothing is lost by forgetting. The node details pane has a "Save changes" button for its fields.
+43. **Placement rules** (§4 doesn't state them). Documents sit inside a section, or under another document as sub-items. Sections sit at the top level, under a clarifying heading, or inside a section. Headings sit at the top level or inside a section. The GUI explains a refused move, and adding a document "after" a section puts it inside that section.
+
+### Screens (§12)
+44. **Drag and drop uses plain Treeview mouse bindings**, so `tkinterdnd2` is not needed. Dropping on the top 30% of a row puts the node before it, the bottom 30% after it, and the middle inside it.
+45. **Live codes while dragging show only the dragged node's would-be code** ("Top 10 List becomes B.01"), in the status line. §12 asks for codes "next to each node as you drag". Re-coding every row on each mouse move flickers; the full tree re-codes on drop.
+46. **Not yet built, but visible.** The Import button explains that import arrives in phase 3, "Fill from file..." is disabled until phase 3, and the Print & export screen shows its options disabled until phase 4.
+47. **The "BMC revision block" footer preset is a placeholder** (`Revision {{revision}}` / `Revised {{revision_date}}`, adding those two variables), because the real block from the samples isn't in the repo.
+48. **Opening a folder that isn't a binder** offers to make it an empty binder. Files already in it are listed as orphans and nothing is changed.
+49. **The lock is taken when a binder is opened** (the binder screen is the structure editor, §10) and released when it is closed. A lock held by the same user on the same machine is re-entrant. Someone else's lock gives a read-only screen with a banner, plus a "Break lock..." button once the lock is older than `lock_max_age_hours`.
+50. **App-level files** live in `%APPDATA%\BinderBuilder\`: `recent.json`, plus `error.log` for error reporting (the user sees a short message and the full traceback goes to the log).
+51. **Threading.** Plan and apply run on worker threads. Worker functions never hold Tk objects, and garbage from destroyed screens is collected on the Tk thread. Without this, Tcl crashed when a widget was freed on a worker thread; the GUI tests caught it.
+
+### Packaging and updates (§2)
+52. **The updater targets `Beorpa592/Binder-Builder`** (the actual git remote; §2 names the repo `binder-builder`). It self-updates only in the packaged build. It downloads only from `https://github.com/`, rejects archive paths that escape the folder, and copies the new build over the app folder with `robocopy /E`, so old files are never deleted. There is no code signing or signature check yet. *Recommendation:* sign releases before wide rollout.
+53. **`BinderBuilder.exe --cli <args>`** runs the command line inside the packaged app (output goes to `%APPDATA%\BinderBuilder\cli.log` when there's no console). It's used to verify the frozen build and is useful for support.
+54. **The release workflow** (`.github/workflows/release.yml`) runs on `v*` tags. It fails if the tag doesn't equal `binder_builder.__version__`, runs the tests (the Office COM test skips on CI, which has no Office), builds, and attaches `BinderBuilder-<version>-win64.zip`. It has never run, because nothing has been pushed.
+
+### Acceptance
+55. **The phase 2 acceptance test names a non-technical user, which I can't be.** It is covered by three things:
+    - `test_phase2_scenario.py`: five sections and twelve documents through the same session the GUI uses, author edits, two sections reordered, re-sync, and every file, header, TOC, cover and tab is correct with zero body changes.
+    - `test_gui.py`: drives the real tkinter screens, including genuine mouse drag-and-drop events, include toggles, the details pane, settings, sync apply and read-only lock mode.
+    - `test_office_smoke.py`: opens the synced files in real Word and Excel.
+
+    **Still open:** a hands-on session with a real non-technical user.
