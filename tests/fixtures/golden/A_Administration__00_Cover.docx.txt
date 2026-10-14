@@ -1,0 +1,17 @@
+[HEADER]
+<bb:header:1>North Star</>	Packet Ref # <bb:code>A.00</>
+<bb:header:2>North Star Media</>
+<bb:header:3>Management Binder</>
+<bb:header:4>Administration</>
+[FOOTER]
+Page {PAGE} of {NUMPAGES}
+[BODY]
+(Title) A) Administration
+__X__	A.01	North Star MRP Summary
+__X__	A.02	Organizational Chart
+__X__	A.03	Top 10 List
+__X__	A.03.PB	Top 10 List Backup
+__X__	A.04	Points of Contact
+__X__	A.05	Budget Overview
+__X__	A.06	Meeting Minutes
+__X__	A.07	Social Media Outreach Efforts

@@ -1,0 +1,11 @@
+[BODY]
+<table>
+| 0) Control Section |
+| A) Administration |
+| Policies and Procedures |
+| C) Campaign Management |
+| D) Website Media |
+| E) Print Media |
+|  |
+|  |
+</table>

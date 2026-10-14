@@ -1,0 +1,12 @@
+[HEADER]
+<bb:header:1>North Star</>	Packet Ref # <bb:code>D.00</>
+<bb:header:2>North Star Media</>
+<bb:header:3>Management Binder</>
+<bb:header:4>Website Media</>
+[FOOTER]
+Page {PAGE} of {NUMPAGES}
+[BODY]
+(Title) D) Website Media
+__X__	D.01	Index of Genres & Channels
+__X__	D.01.01	Weekly Digest Monthly Summary
+__X__	D.02	Website Screenshots

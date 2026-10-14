@@ -1,0 +1,13 @@
+[HEADER]
+<bb:header:1>North Star</>	Packet Ref # <bb:code>B.00</>
+<bb:header:2>North Star Media</>
+<bb:header:3>Management Binder</>
+<bb:header:4>Policies and Procedures</>
+[FOOTER]
+Page {PAGE} of {NUMPAGES}
+[BODY]
+(Title) B) Policies and Procedures
+__X__	B.01	Media Policy
+__X__	B.02	Signed Policy Acknowledgement
+__X__	B.03	Licensed Release Form
+__ __	B.04	Retired Policy

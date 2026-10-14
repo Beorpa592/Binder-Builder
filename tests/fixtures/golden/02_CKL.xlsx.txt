@@ -1,0 +1,107 @@
+[SHEET Master Checklist] state=visible
+header=(None, 'North Star\nNorth Star Media\nManagement Binder\nMaster Checklist', 'Packet Ref # CKL\nPage &P of &N')
+hidden columns=['G']
+A1='Reference'  B1='Description'  C1='Hours'  D1='Reviewer'  E1='Date Reviewed'  F1='Final Review'  G1='bb_id'
+A2='=bb__toc'  B2='Table of Contents'  G2='#toc'
+A3='=bb__ckl'  B3='Master Checklist'  G3='#ckl'
+A4='=bb_control__cover'  B4='Control Section'  G4='control#cover'
+A5='=bb_open_points'  B5='Open Points / Action Items'  C5=1  D5='Placeholder Reviewer'  E5='2026-02-01'  G5='open-points'
+A6='=bb_notes_to_reviewer'  B6='Notes to Reviewer'  G6='notes-to-reviewer'
+A7='=bb_time_sheet'  B7='Time Sheet'  G7='time-sheet'
+A8='=bb_administration__cover'  B8='Administration'  G8='administration#cover'
+A9='=bb_mrp_summary'  B9='North Star MRP Summary'  C9=1  D9='Placeholder Reviewer'  E9='2026-02-01'  G9='mrp-summary'
+A10='=bb_org_chart'  B10='Organizational Chart'  G10='org-chart'
+A11='=bb_top_10_list'  B11='Top 10 List'  C11=1  D11='Placeholder Reviewer'  E11='2026-02-01'  G11='top-10-list'
+A12='=bb_top_10_list_backup'  B12='Top 10 List Backup'  G12='top-10-list-backup'
+A13='=bb_points_of_contact'  B13='Points of Contact'  G13='points-of-contact'
+A14='=bb_budget_overview'  B14='Budget Overview'  G14='budget-overview'
+A15='=bb_meeting_minutes'  B15='Meeting Minutes'  G15='meeting-minutes'
+A16='=bb_outreach_efforts'  B16='Social Media Outreach Efforts'  G16='outreach-efforts'
+A17='=bb_policies__cover'  B17='Policies and Procedures'  G17='policies#cover'
+A18='=bb_media_policy'  B18='Media Policy'  C18=1  D18='Placeholder Reviewer'  E18='2026-02-01'  G18='media-policy'
+A19='=bb_signed_acknowledgement'  B19='Signed Policy Acknowledgement'  G19='signed-acknowledgement'
+A20='=bb_licensed_release_form'  B20='Licensed Release Form'  G20='licensed-release-form'
+A21='=bb_retired_policy'  B21='Retired Policy [not included]'  G21='retired-policy'
+A22='=bb_campaign_management__cover'  B22='Campaign Management'  G22='campaign-management#cover'
+A23='=bb_campaign_calendar'  B23='Campaign Calendar'  G23='campaign-calendar'
+A24='=bb_campaign_briefs'  B24='Campaign Briefs'  G24='campaign-briefs'
+A25='=bb_website_media__cover'  B25='Website Media'  G25='website-media#cover'
+A26='=bb_web_index'  B26='Index of Genres & Channels'  C26=1  D26='Placeholder Reviewer'  E26='2026-02-01'  G26='web-index'
+A27='=bb_weekly_digest'  B27='Weekly Digest Monthly Summary'  G27='weekly-digest'
+A28='=bb_website_screenshots'  B28='Website Screenshots'  G28='website-screenshots'
+A29='=bb_print_media__cover'  B29='Print Media'  G29='print-media#cover'
+A30='=bb_print_inventory'  B30='Print Inventory'  G30='print-inventory'
+A31='Tabs'  B31='Tabs'  G31='#tabs'
+[SHEET _binder] state=hidden
+header=(None, None, None)
+A1='id' @  B1='code' @  C1='title' @  D1='filename' @
+A2='control' @  B2='0' @  C2='Control Section' @  D2='0_Control_Section' @
+A3='open-points' @  B3='0.01' @  C3='Open Points / Action Items' @  D3='01_Open_Points.xlsx' @
+A4='notes-to-reviewer' @  B4='0.02' @  C4='Notes to Reviewer' @  D4='02_Notes_to_Reviewer.xlsx' @
+A5='time-sheet' @  B5='0.03' @  C5='Time Sheet' @  D5='03_Time_Sheet.xlsx' @
+A6='administration' @  B6='A' @  C6='Administration' @  D6='A_Administration' @
+A7='mrp-summary' @  B7='A.01' @  C7='North Star MRP Summary' @  D7='01_North_Star_MRP_Summary.docx' @
+A8='org-chart' @  B8='A.02' @  C8='Organizational Chart' @  D8='02_Organizational_Chart.docx' @
+A9='top-10-list' @  B9='A.03' @  C9='Top 10 List' @  D9='03_Top_10_List.docx' @
+A10='top-10-list-backup' @  B10='A.03.PB' @  C10='Top 10 List Backup' @  D10='03_PB_Top_10_List_Backup.docx' @
+A11='points-of-contact' @  B11='A.04' @  C11='Points of Contact' @  D11='04_Points_of_Contact.docx' @
+A12='budget-overview' @  B12='A.05' @  C12='Budget Overview' @  D12='05_Budget_Overview.xlsx' @
+A13='meeting-minutes' @  B13='A.06' @  C13='Meeting Minutes' @  D13='06_Meeting_Minutes.docx' @
+A14='outreach-efforts' @  B14='A.07' @  C14='Social Media Outreach Efforts' @  D14='07_Social_Media_Outreach_Efforts.docx' @
+A15='policies' @  B15='B' @  C15='Policies and Procedures' @  D15='B_Policies_and_Procedures' @
+A16='media-policy' @  B16='B.01' @  C16='Media Policy' @  D16='01_Media_Policy.docx' @
+A17='signed-acknowledgement' @  B17='B.02' @  C17='Signed Policy Acknowledgement' @  D17='02_Signed_Policy_Acknowledgement.pdf' @
+A18='licensed-release-form' @  B18='B.03' @  C18='Licensed Release Form' @  D18='03_Licensed_Release_Form.docx' @
+A19='retired-policy' @  B19='B.04' @  C19='Retired Policy' @  D19='04_Retired_Policy.docx' @
+A20='campaign-management' @  B20='C' @  C20='Campaign Management' @  D20='C_Campaign_Management' @
+A21='campaign-calendar' @  B21='C.01' @  C21='Campaign Calendar' @  D21='01_Campaign_Calendar.xlsx' @
+A22='campaign-briefs' @  B22='C.02' @  C22='Campaign Briefs' @  D22='02_Campaign_Briefs.docx' @
+A23='website-media' @  B23='D' @  C23='Website Media' @  D23='D_Website_Media' @
+A24='web-index' @  B24='D.01' @  C24='Index of Genres & Channels' @  D24='01_Index_of_Genres_and_Channels.xlsx' @
+A25='weekly-digest' @  B25='D.01.01' @  C25='Weekly Digest Monthly Summary' @  D25='01_01_Weekly_Digest_Monthly_Summary.xlsx' @
+A26='website-screenshots' @  B26='D.02' @  C26='Website Screenshots' @  D26='02_Website_Screenshots.docx' @
+A27='print-media' @  B27='E' @  C27='Print Media' @  D27='E_Print_Media' @
+A28='print-inventory' @  B28='E.01' @  C28='Print Inventory' @  D28='01_Print_Inventory.xlsx' @
+A29='#toc' @  B29='TOC' @  C29='Table of Contents' @  D29='01_TOC_m.xlsx' @
+A30='#ckl' @  B30='CKL' @  C30='Master Checklist' @  D30='02_CKL.xlsx' @
+A31='control#cover' @  B31='0.00' @  C31='Control Section' @  D31='00_Cover_Sheet_CS.docx' @
+A32='administration#cover' @  B32='A.00' @  C32='Administration' @  D32='00_Cover.docx' @
+A33='policies#cover' @  B33='B.00' @  C33='Policies and Procedures' @  D33='00_Cover.docx' @
+A34='campaign-management#cover' @  B34='C.00' @  C34='Campaign Management' @  D34='00_Cover.docx' @
+A35='website-media#cover' @  B35='D.00' @  C35='Website Media' @  D35='00_Cover.docx' @
+A36='print-media#cover' @  B36='E.00' @  C36='Print Media' @  D36='00_Cover.docx' @
+NAME bb__ckl -> '_binder'!$B$30
+NAME bb__toc -> '_binder'!$B$29
+NAME bb_administration -> '_binder'!$B$6
+NAME bb_administration__cover -> '_binder'!$B$32
+NAME bb_budget_overview -> '_binder'!$B$12
+NAME bb_campaign_briefs -> '_binder'!$B$22
+NAME bb_campaign_calendar -> '_binder'!$B$21
+NAME bb_campaign_management -> '_binder'!$B$20
+NAME bb_campaign_management__cover -> '_binder'!$B$34
+NAME bb_control -> '_binder'!$B$2
+NAME bb_control__cover -> '_binder'!$B$31
+NAME bb_licensed_release_form -> '_binder'!$B$18
+NAME bb_media_policy -> '_binder'!$B$16
+NAME bb_meeting_minutes -> '_binder'!$B$13
+NAME bb_mrp_summary -> '_binder'!$B$7
+NAME bb_notes_to_reviewer -> '_binder'!$B$4
+NAME bb_open_points -> '_binder'!$B$3
+NAME bb_org_chart -> '_binder'!$B$8
+NAME bb_outreach_efforts -> '_binder'!$B$14
+NAME bb_points_of_contact -> '_binder'!$B$11
+NAME bb_policies -> '_binder'!$B$15
+NAME bb_policies__cover -> '_binder'!$B$33
+NAME bb_print_inventory -> '_binder'!$B$28
+NAME bb_print_media -> '_binder'!$B$27
+NAME bb_print_media__cover -> '_binder'!$B$36
+NAME bb_retired_policy -> '_binder'!$B$19
+NAME bb_signed_acknowledgement -> '_binder'!$B$17
+NAME bb_time_sheet -> '_binder'!$B$5
+NAME bb_top_10_list -> '_binder'!$B$9
+NAME bb_top_10_list_backup -> '_binder'!$B$10
+NAME bb_web_index -> '_binder'!$B$24
+NAME bb_website_media -> '_binder'!$B$23
+NAME bb_website_media__cover -> '_binder'!$B$35
+NAME bb_website_screenshots -> '_binder'!$B$26
+NAME bb_weekly_digest -> '_binder'!$B$25

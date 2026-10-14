@@ -10,7 +10,7 @@ from binder_builder.engine import excel, sync, word
 from binder_builder.engine.manifest import Manifest
 from binder_builder.engine.storage import LocalFolderStorage, LockedError
 
-from .helpers import body_hashes_by_entity, do_sync, edit_tree, office_files
+from .helpers import author_files, body_hashes_by_entity, do_sync, edit_tree, office_files
 
 ADMIN = "A_Administration"
 
@@ -23,7 +23,7 @@ def _all_files(folder):
 
 def test_first_sync_then_empty_plan(binder):
     before_files = _all_files(binder)
-    before_hashes = {p.relative_to(binder).as_posix(): sync.body_hash(p) for p in office_files(binder)}
+    before_hashes = {rel: sync.body_hash(binder / rel) for rel in author_files(binder)}
 
     p1 = sync.plan(binder)
     kinds = {a.kind for a in p1.changes}
@@ -37,7 +37,7 @@ def test_first_sync_then_empty_plan(binder):
     assert p2.is_empty, p2.render()
     assert not p2.actions, p2.render()
 
-    # nothing moved, created or lost; no body changed
+    # nothing moved, created or lost; no author's body changed
     assert _all_files(binder) == before_files
     for rel, h in before_hashes.items():
         assert sync.body_hash(binder / rel) == h, rel
@@ -190,6 +190,8 @@ def test_invariant_failure_keeps_original(binder, monkeypatch):
 
     def evil_update(src, dest, spec, codes):
         real_update(src, dest, spec, codes)
+        if "Organizational_Chart" not in str(src):
+            return
         from docx import Document
         d = Document(str(dest))
         d.paragraphs[1].text = "tampered"

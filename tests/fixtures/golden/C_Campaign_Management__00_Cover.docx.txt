@@ -1,0 +1,11 @@
+[HEADER]
+<bb:header:1>North Star</>	Packet Ref # <bb:code>C.00</>
+<bb:header:2>North Star Media</>
+<bb:header:3>Management Binder</>
+<bb:header:4>Campaign Management</>
+[FOOTER]
+Page {PAGE} of {NUMPAGES}
+[BODY]
+(Title) C) Campaign Management
+__X__	C.01	Campaign Calendar
+__X__	C.02	Campaign Briefs

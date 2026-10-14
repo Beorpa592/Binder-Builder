@@ -1,0 +1,10 @@
+[HEADER]
+<bb:header:1>North Star</>	Packet Ref # <bb:code>E.00</>
+<bb:header:2>North Star Media</>
+<bb:header:3>Management Binder</>
+<bb:header:4>Print Media</>
+[FOOTER]
+Page {PAGE} of {NUMPAGES}
+[BODY]
+(Title) E) Print Media
+__X__	E.01	Print Inventory

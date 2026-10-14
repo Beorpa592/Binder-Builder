@@ -1,0 +1,13 @@
+[HEADER]
+<bb:header:1>North Star</>	Packet Ref # <bb:code>0.00</>
+<bb:header:2>North Star Media</>
+<bb:header:3>Management Binder</>
+<bb:header:4>Control Section</>
+[FOOTER]
+Page {PAGE} of {NUMPAGES}
+[BODY]
+(Title) 0) Control Section
+(Subtitle) Used to communicate with your packet reviewer and keep track of your time.
+__X__	0.01	Open Points / Action Items
+__X__	0.02	Notes to Reviewer
+__X__	0.03	Time Sheet
