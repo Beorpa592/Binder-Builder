@@ -1,0 +1,84 @@
+# Synthetic fixture binder. Placeholder content only.
+format_version: 1
+binder:
+  name: North Star Media Management Binder
+  header_lines:                      # author-defined, propagated to every document
+    - "{{org_short}}"                # line 1 left; the ref code goes line 1 right automatically
+    - "North Star Media"
+    - "Management Binder"
+    - "{{doc_title}}"
+  ref_label: "Packet Ref #"
+  vars:
+    org_short: North Star
+  footer:
+    left: ""
+    center: ""
+    right: ""
+  page_numbers: per_document
+  filenames:
+    toc: TOC_m                       # legacy name 01_TOC_m.xlsx preserved
+  tabs:
+    product: "Avery 658843"
+    template: Tabs.docx
+    label_style: letter_and_label
+    fit_limit: 24
+  cover:
+    template: 00_Cover.docx
+    lines: ["North Star Media", "(DCCS Social Media Outreach)", "Management Binder"]
+tree:
+  - id: control
+    kind: section
+    label: Control Section
+    numeric: true
+    filename: Cover_Sheet_CS         # legacy cover name 00_Cover_Sheet_CS.docx
+    description: "Used to communicate with your packet reviewer and keep track of your time."
+    children:
+      - {id: open-points, kind: item, title: "Open Points / Action Items", ext: xlsx, filename: Open_Points}
+      - {id: notes-to-reviewer, kind: item, title: "Notes to Reviewer", ext: xlsx}
+      - {id: time-sheet, kind: item, title: "Time Sheet", ext: xlsx}
+  - id: administration
+    kind: section
+    label: Administration
+    children:
+      - {id: mrp-summary, kind: item, title: "North Star MRP Summary", ext: docx}
+      - {id: org-chart, kind: item, title: "Organizational Chart", ext: docx}
+      - {id: top-10-list, kind: item, title: "Top 10 List", ext: docx}
+      - {id: top-10-list-backup, kind: item, title: "Top 10 List Backup", ext: docx, suffix: PB}
+      - {id: points-of-contact, kind: item, title: "Points of Contact", ext: docx}
+      - {id: budget-overview, kind: item, title: "Budget Overview", ext: xlsx}
+      - {id: meeting-minutes, kind: item, title: "Meeting Minutes", ext: docx}
+      - {id: outreach-efforts, kind: item, title: "Social Media Outreach Efforts", ext: docx}
+  - id: policies
+    kind: section
+    label: Policies and Procedures
+    children:
+      - {id: media-policy, kind: item, title: "Media Policy", ext: docx}
+      - {id: signed-acknowledgement, kind: item, title: "Signed Policy Acknowledgement", ext: pdf}
+      - {id: licensed-release-form, kind: item, title: "Licensed Release Form", ext: docx, locked_header: true}
+      - {id: retired-policy, kind: item, title: "Retired Policy", ext: docx, included: false}
+  - id: campaign-management
+    kind: section
+    label: Campaign Management
+    children:
+      - {id: campaign-calendar, kind: item, title: "Campaign Calendar", ext: xlsx}
+      - {id: campaign-briefs, kind: item, title: "Campaign Briefs", ext: docx}
+  - id: content-mediums
+    kind: header                     # clarifying header: no letter, no folder, no tab
+    label: Content Mediums
+    children:
+      - id: website-media
+        kind: section
+        label: Website Media
+        children:
+          - id: web-index
+            kind: item
+            title: "Index of Genres & Channels"
+            ext: xlsx
+            children:
+              - {id: weekly-digest, kind: item, title: "Weekly Digest Monthly Summary", ext: xlsx}
+          - {id: website-screenshots, kind: item, title: "Website Screenshots", ext: docx}
+      - id: print-media
+        kind: section
+        label: Print Media
+        children:
+          - {id: print-inventory, kind: item, title: "Print Inventory", ext: xlsx}
