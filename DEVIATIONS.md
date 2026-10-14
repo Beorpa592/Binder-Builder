@@ -95,3 +95,31 @@ choice and the reason for it. Ben can overrule any of them.
     - `test_office_smoke.py`: opens the synced files in real Word and Excel.
 
     **Still open:** a hands-on session with a real non-technical user.
+
+## Phase 3
+
+### Reading the legacy TOC (§9.1 step 1)
+56. **Row parsing.** The include-mark column is whichever column holds the most `X`s. A row is a section if its first non-mark cell is a section code (`0`, `A`, `AA`), an item if it is an item code (floats like `0.01` are converted to `"0.01"`), and a clarifying header if it is a lone text cell after the first section. Title rows above the first section are skipped. An item without an `X` is imported as `included: false`.
+57. **Structure the TOC can't express.** A clarifying header groups every section after it until the next header. Sub-sections can't be recovered (TOC letters are flat), so all sections import at the top level or under a header. If the TOC's own numbering has a gap (`A.01, A.03`), the computed codes close it, and each such case is listed as a "numbering" disagreement.
+58. **New ids are slugs of the TOC titles** (`open-points-action-items`). A file's type comes from its paired file. An entry with no file defaults to `docx`, and a blank one is created on the first sync.
+
+### Pairing (§9.1 step 2)
+59. **Matching thresholds.** A header-code match is accepted only if the titles are also at least 50% similar, so a stale header code can never pair the wrong file. The fixture's Points of Contact header says `A.05`, which is Budget Overview's code. Filename-number matching runs inside the section's folder with the same 50% bar. Title-only matching needs 85%. A file is never paired twice, and manual pairing in the wizard overrides everything.
+60. **Header, variables and reference label are inferred** from the most common legacy Word header pattern. In the fixture this yields `{{org_short}}`, `North Star Media`, `Management Binder`, `{{doc_title}}` with label `Packet Ref #`, so the minority `Ref #:` becomes uniform.
+61. **What accept writes.** Only `.binder/`: the manifest, `state.json` and `import.json` (pairs, disagreements, every file's previous header text, and unclaimed references). `state.json` records each file's current path, so a file whose number is stale is renamed by the first sync rather than recreated. The legacy `Tabs.docx` is copied into `.binder/templates/` as the tab layout (DEVIATIONS #28).
+62. **The tree is edited after accepting, not inside the wizard.** The user makes changes in the binder screen before the first sync. Accepting changes no document, and the first sync is previewed like any other.
+63. **Locked headers can't be inferred.** Nothing in a legacy file says "licensed form". The first sync after import stamps every document, and the plan lists each one. *Recommendation:* tick "Locked header" on licensed forms and scans before applying the first sync. The wizard's final message says to review the first sync.
+
+### Claiming references (§9.2)
+64. **When claims are applied.** In the wizard, after accept and before the first sync. Each touched file is backed up (`<ts>_claims`) and written through a claim-specific invariant:
+    - Word: the full body text, including text inside controls, must be identical.
+    - Excel: only the approved cells may change, and each only into a formula.
+
+    A code split by a tab or field can't be wrapped. It is skipped and reported, and so are unapproved hits (in `import.json`).
+65. **What isn't scanned or claimed.**
+    - Not scanned: the TOC, the CKL and other generated documents (the CKL adopts its rows through §8.1), and PDFs.
+    - Not claimed: numeric Excel cells, because `0.01` may be a number rather than a code. A code inside longer cell text becomes a concatenation formula (`="see "&bb_top_10_list`).
+
+### Fill from any source (§9.3)
+66. **`copied_from.source_path`** records the exact file copied, and drift is that file's hash against the one recorded. Filling a position that already has a file needs confirmation, and the current file is backed up (`<ts>_fill`). Re-copy replaces this binder's copy wholesale after a backup. If the source is inside another binder, `binder_path` and `id` are filled from that binder's state.
+67. **CLI:** `python -m binder_builder import <folder> [--accept] [--claim-all]`.

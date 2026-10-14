@@ -75,3 +75,28 @@ and a release zip), and the GitHub release workflow.
   GitHub release run (nothing has been pushed).
 
 **Deviations:** DEVIATIONS.md items 41–55.
+
+## Phase 3: Import, claim, fill (tag `phase-3`, version 0.3.0)
+
+**Built:** `engine/importer.py` (TOC parse, pairing, disagreements, accept, claims),
+`engine/refs.py` (code scan, claims to `bb:ref` controls and `=bb_` formulas, claim invariants),
+`BinderSession.fill_from_file` / `recopy` with the drift warning in the plan, the import
+wizard GUI, and Fill from file / Re-copy in the binder screen and the Add document dialog.
+There is also the CLI `import` command and a legacy fixture (`tests/fixtures/legacy_binder/`).
+
+**Acceptance (all passing, 90 tests total):**
+- The legacy fixture has float codes in the TOC, an inconsistent `Ref #:` label, one stale
+  header code (A.05 on A.04) and one stale filename number (05 for A.06). Every file pairs
+  (the stale code doesn't mis-pair), exactly those two disagreements are shown, analysis
+  changes no byte on disk, and accepting writes only `.binder/`.
+- After claims and the first sync, every header carries the uniform `Packet Ref #` label
+  and the TOC's code (the stale code is fixed, the stale file is renamed). All 9 claimed
+  references resolve and follow a later insertion, author text is identical, and the second
+  plan is empty.
+- Fill from file copies without touching the source, the header is taken over, a changed
+  source is warned about, and re-copy clears the warning.
+- The import wizard was driven end to end in the GUI test. A claimed document opens in real
+  Word with both `bb:ref` controls and its sentence intact.
+
+**Deviations:** DEVIATIONS.md items 56–67. The one with real consequences:
+- Locked headers can't be inferred, so lock licensed forms before the first sync (#63).
