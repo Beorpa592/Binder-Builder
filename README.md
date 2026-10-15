@@ -26,14 +26,28 @@ python -m venv .venv
 .venv/Scripts/python -m pytest
 ```
 
-Command line (used by the tests and the GUI):
+Command line (used by the tests, and available in the packaged app as `BinderBuilder.exe --cli ...`):
 
 ```bash
-python -m binder_builder sync "<binder folder>" --plan
-python -m binder_builder sync "<binder folder>" --apply
-python -m binder_builder backups "<binder folder>"
-python -m binder_builder restore "<binder folder>" <backup>
+python -m binder_builder sync "<binder>" --plan            # or --apply [--yes]
+python -m binder_builder import "<folder>" [--accept] [--claim-all]
+python -m binder_builder export-pdf "<binder>" [--merged] [--scope all|changed|selected]
+python -m binder_builder new-from "<old binder>" "<new folder>" [--copy-documents]
+python -m binder_builder backups "<binder>"
+python -m binder_builder restore "<binder>" <backup>
+python -m binder_builder unlock "<binder>" [--break]
+python -m binder_builder diagnose ["<binder>"]
 ```
+
+Build the Windows app (`dist/BinderBuilder/BinderBuilder.exe` plus a release zip):
+
+```bash
+.venv/Scripts/python packaging/build.py
+```
+
+Pushing a tag `vX.Y.Z` that matches `binder_builder.__version__` runs
+`.github/workflows/release.yml`. It tests, builds and attaches the zip to a GitHub Release,
+and the app's updater picks it up from there.
 
 Test fixtures are synthetic placeholder binders. See
 [tests/fixtures/README.md](tests/fixtures/README.md). The repo is public, so real

@@ -129,3 +129,34 @@ Page column), `output/print_manifest.py` (manifest, changed-only printing), a wo
 print blank workbooks.
 
 **Deviations:** DEVIATIONS.md items 68–80.
+
+## Phase 5: Hardening (tag `phase-5`, version 0.5.0)
+
+**Built:** the manifest `format_version` upgrade framework with a pre-upgrade backup; "new
+binder from existing binder's structure" (GUI, session and CLI `new-from`); every backup kind
+restorable (including kept PDF originals) with a descriptive restore list; lock breaking from
+the CLI as well as the GUI; and error reporting ("Report a problem...", `diagnose`). The CLI
+`export-pdf` command from §13 is also built.
+
+**Tests:** 122 passing in total (phase 5 added the upgrade path, invalid manifests, new-from
+with and without documents, restore of sync, fill, claims and first-sync backups, PDF original
+restore, CLI unlock/new-from/export/diagnose, and the GUI problem report and restore list).
+
+**Packaged build re-verified (0.5.0):** the GUI exe launches. Through `--cli`, the frozen build
+imports the legacy fixture, claims 9 references, syncs, reports an empty second plan, and
+exports 29 documents through real Word and Excel into a 30-page merged PDF with page labels
+and bookmarks. No automation process is left behind.
+
+**Deviations:** DEVIATIONS.md items 81–86.
+
+---
+
+## Where things stand
+
+All six phases are built and tagged (`phase-0` … `phase-5`). The local suite has 122 tests,
+including real Word/Excel checks. Things only a person can do:
+1. **A hands-on session with a non-technical user** (the phase 2 acceptance wording).
+2. **Push and publish.** Nothing has been pushed. Pushing a `v0.5.0` tag runs the release workflow, which has never run.
+3. **Try it on a copy of a real binder.** Synthetic fixtures can't cover every quirk of real
+   documents, especially workbooks with charts or pivots (left untouched with a warning) and
+   licensed forms (lock their headers before the first sync).
