@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from .engine import sync
 from .engine.manifest import ManifestError
@@ -70,6 +71,68 @@ def _cmd_restore(args) -> int:
     return 0
 
 
+def _cmd_unlock(args) -> int:
+    from .engine.manifest import Manifest
+    from .engine.storage import LocalFolderStorage
+
+    storage = LocalFolderStorage(args.folder)
+    info = storage.lock_info()
+    if info is None:
+        print("Not locked.")
+        return 0
+    print(f"Locked by {info.user} on {info.machine} since {info.since:%Y-%m-%d %H:%M} ({info.age_hours():.1f} h).")
+    if not args.break_lock:
+        return 0
+    max_age = Manifest.load(args.folder).binder.lock_max_age_hours
+    if info.age_hours() < max_age:
+        print(f"Not broken: locks can be broken once they are older than {max_age:g} hours.", file=sys.stderr)
+        return 2
+    storage.lock(force=True, max_age_hours=max_age)
+    storage.unlock()
+    print("Lock broken.")
+    return 0
+
+
+def _cmd_new_from(args) -> int:
+    from .engine.session import BinderSession
+
+    dest = args.dest
+    s = BinderSession.create_from_structure(args.source, dest, args.name or Path(dest).name,
+                                            copy_documents=args.copy_documents)
+    s.close()
+    print(f"Created {dest}. Run 'sync {dest} --apply' to create its documents.")
+    return 0
+
+
+def _cmd_export_pdf(args) -> int:
+    from .office.export_pdf import OfficeExporter
+    from .output import merge_pdf
+
+    options = merge_pdf.OutputOptions(merged=args.merged, manifest=not args.no_manifest, scope=args.scope,
+                                      selected=args.select)
+    try:
+        with OfficeExporter() as ex:
+            r = merge_pdf.export_binder(args.folder, options, ex, progress=print)
+    except merge_pdf.NeedsSync as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    print(f"Exported {len(r.pdfs)} document(s).")
+    if r.merged:
+        print(f"Merged PDF: {r.merged}")
+    if r.manifest:
+        print(f"Print manifest: {r.manifest}")
+    for w in r.warnings:
+        print(f"warning: {w}", file=sys.stderr)
+    return 0
+
+
+def _cmd_diagnose(args) -> int:
+    from .diagnostics import report
+
+    print(report(args.folder))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="binder_builder")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -97,6 +160,30 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("folder")
     r.add_argument("backup")
     r.set_defaults(func=_cmd_restore)
+
+    u = sub.add_parser("unlock", help="show the structure lock; --break breaks a stale one")
+    u.add_argument("folder")
+    u.add_argument("--break", dest="break_lock", action="store_true")
+    u.set_defaults(func=_cmd_unlock)
+
+    n = sub.add_parser("new-from", help="new binder with an existing binder's structure and settings")
+    n.add_argument("source")
+    n.add_argument("dest")
+    n.add_argument("--name")
+    n.add_argument("--copy-documents", action="store_true", help="copy each document across as a starting point")
+    n.set_defaults(func=_cmd_new_from)
+
+    e = sub.add_parser("export-pdf", help="PDF per document (and optionally merged) through Word/Excel")
+    e.add_argument("folder")
+    e.add_argument("--merged", action="store_true", help="also build the merged binder PDF")
+    e.add_argument("--scope", choices=["all", "changed", "selected"], default="all")
+    e.add_argument("--select", nargs="*", help="node ids for --scope selected")
+    e.add_argument("--no-manifest", action="store_true", help="don't write the print manifest")
+    e.set_defaults(func=_cmd_export_pdf)
+
+    d = sub.add_parser("diagnose", help="print a problem report (versions, lock, recent syncs and errors)")
+    d.add_argument("folder", nargs="?")
+    d.set_defaults(func=_cmd_diagnose)
     return ap
 
 
