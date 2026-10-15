@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import excel, word
+from . import excel, pdfdoc, word
 from .codes import BINDER_COVER, CKL, ITEM, Entity, Layout, compute_layout, header_spec
 from .generate import CKL_TEMPLATE, GENERATED, GenContext, content_signature, render, template_hash
 from .generate import checklist
@@ -74,6 +74,7 @@ class FileWork:
     write: bool = False  # header stamp, ref update and/or checklist rows needed
     regenerate: bool = False  # generated document to be re-rendered
     hybrid: tuple[str, str] | None = None  # (reference heading, description heading)
+    pdf_restash: bool = False  # PDF item: the file on disk is a new original to keep in pdf_sources
 
 
 @dataclass
@@ -247,8 +248,8 @@ def plan(folder: Path | str) -> Plan:
     tree = Tree(manifest)
     layout = compute_layout(tree, manifest.binder)
     rows = binder_rows(tree, layout)
-    ctx = GenContext(folder, manifest, tree, layout)
     state = load_state(folder)
+    ctx = GenContext(folder, manifest, tree, layout, pages=_pages(manifest, state))
     actions: list[Action] = [Action(WARN, "", w) for w in layout.warnings]
 
     def exists(rel: str) -> bool:
@@ -312,7 +313,7 @@ def plan(folder: Path | str) -> Plan:
                     actions.append(Action(REGENERATE, fw.target, f"create {e.title}", eid))
                 continue
             path = folder / fw.current
-            if (fw.move or e.ext in ("docx", "xlsx")) and _in_use(path):
+            if (fw.move or e.ext in ("docx", "xlsx", "pdf")) and _in_use(path):
                 actions.append(Action(WARN, fw.current, "open in Word/Excel by someone; skipped, re-sync later", eid))
                 work[eid] = FileWork(e, fw.current, fw.current)
                 continue
@@ -322,6 +323,8 @@ def plan(folder: Path | str) -> Plan:
                 _inspect_docx(fw, path, manifest, layout, actions)
             elif e.ext == "xlsx":
                 _inspect_xlsx(fw, path, manifest, layout, rows, actions)
+            elif e.ext == "pdf":
+                _inspect_pdf(fw, folder, path, manifest, state, actions)
             if fw.move:
                 actions.append(Action(MOVE, fw.current, f"-> {fw.target}", eid, fw.target))
     finally:
@@ -370,6 +373,36 @@ def _inspect_generated(fw: FileWork, ctx: GenContext, rows, state, scratch: Path
     if reasons:
         fw.regenerate = True
         actions.append(Action(REGENERATE, fw.target, f"{e.title}: {', '.join(reasons)}", e.entity_id))
+
+
+def _pages(manifest: Manifest, state: dict) -> dict[str, int] | None:
+    """Running page numbers from the last merged export, for the TOC's Page column (continuous mode)."""
+    return state.get("pages") if manifest.binder.page_numbers == "continuous" else None
+
+
+def _pdf_key(folder: Path, e: Entity, manifest: Manifest) -> str | None:
+    spec = _spec_for(e, manifest)
+    src = pdfdoc.source_path(folder, e.entity_id)
+    if spec is None or not src.is_file():
+        return None
+    return pdfdoc.stamp_key(file_hash(src), spec)
+
+
+def _inspect_pdf(fw: FileWork, folder: Path, path: Path, manifest: Manifest, state: dict,
+                 actions: list[Action]) -> None:
+    e, eid = fw.entity, fw.entity.entity_id
+    spec = _spec_for(e, manifest)
+    if spec is None:
+        return  # locked header: the PDF is left exactly as it is
+    src = pdfdoc.source_path(folder, eid)
+    recorded = state["files"].get(eid, {})
+    if not src.is_file() or (recorded.get("hash") and file_hash(path) != recorded["hash"]):
+        fw.write = fw.pdf_restash = True
+        actions.append(Action(STAMP, fw.target, f"header overlay -> {e.code} (original kept in .binder/pdf_sources)",
+                              eid))
+    elif recorded.get("pdf_key") != pdfdoc.stamp_key(file_hash(src), spec):
+        fw.write = True
+        actions.append(Action(STAMP, fw.target, f"header overlay -> {e.code}", eid))
 
 
 def _inspect_docx(fw: FileWork, path: Path, manifest: Manifest, layout: Layout, actions: list[Action]) -> None:
@@ -443,6 +476,16 @@ def _write_file(fw: FileWork, dst: Path, tmp: Path, p: Plan, manifest: Manifest)
     """Stamp/refs/checklist into `tmp`, verify the invariant, then replace `dst`. Returns a failure or None."""
     e = fw.entity
     spec = _spec_for(e, manifest)
+    if e.ext == "pdf":
+        src = pdfdoc.source_path(p.folder, e.entity_id)
+        if fw.pdf_restash:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(dst, src)  # the previous original, if any, is in this sync's backup
+        pdfdoc.stamp(src, tmp, spec)
+        if not pdfdoc.invariant_ok(src, tmp):
+            return f"{fw.target}: overlay would have changed page content; original kept (invariant check)"
+        os.replace(tmp, dst)
+        return None
     if e.ext == "docx":
         before = word.body_hash(dst)
         word.update(dst, tmp, spec, p.layout.codes)
@@ -471,7 +514,7 @@ def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
     storage = LocalFolderStorage(folder)
     manifest = storage.open()
     tree = Tree(manifest)
-    ctx = GenContext(folder, manifest, tree, p.layout)
+    ctx = GenContext(folder, manifest, tree, p.layout, pages=_pages(manifest, load_state(folder)))
     acquired = storage.lock(force=force_lock, max_age_hours=manifest.binder.lock_max_age_hours)
     result = ApplyResult(backup=None)
     work_dir = folder / BINDER_DIR / WORK
@@ -486,6 +529,12 @@ def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
             shutil.copy2(folder / fw.current, dest)
             index.append({"path": fw.current, "moved_to": fw.target if fw.move else None,
                           "entity_id": fw.entity.entity_id})
+        for fw in touched:
+            stash = pdfdoc.source_path(folder, fw.entity.entity_id)
+            if fw.pdf_restash and stash.is_file():
+                dest = backup / BINDER_DIR / pdfdoc.SOURCES / stash.name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(stash, dest)
         created = [fw for fw in p.work.values() if fw.current is None]
         if index or created:
             backup.mkdir(parents=True, exist_ok=True)
@@ -582,6 +631,8 @@ def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
                 entry = {"path": rel, "hash": file_hash(folder / rel)}
                 if e.kind in GENERATED:
                     entry["template"] = template_hash(ctx.template_for(e))
+                if e.ext == "pdf" and (key := _pdf_key(folder, e, manifest)):
+                    entry["pdf_key"] = key
                 files[e.entity_id] = entry
         state["files"] = files
         save_state(folder, state)
