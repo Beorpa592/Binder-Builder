@@ -74,6 +74,7 @@ class BinderView(ttk.Frame):
         btn("← Outdent", lambda: self._edit(self.s.outdent))
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
         btn("Open file", self._open_file, state="normal")
+        btn("Insert reference...", self._insert_reference, state="normal")
         ttk.Button(bar, text="Close binder", command=self.app.close_binder).pack(side="right")
         ttk.Button(bar, text="Print & export...", command=self._print).pack(side="right", padx=4)
         ttk.Button(bar, text="Settings...", command=self._settings).pack(side="right", padx=4)
@@ -272,6 +273,24 @@ class BinderView(ttk.Frame):
         except FileNotFoundError as e:
             messagebox.showinfo("Open file", str(e), parent=self)
 
+    def _insert_reference(self) -> None:
+        dlg = PickDocumentDialog(self, self.s, self.selected())
+        self.wait_window(dlg)
+        if not dlg.choice:
+            return
+        node_id, code = dlg.choice
+        try:
+            from ..office.insert_reference import NoActiveDocument, insert_into_active
+        except ImportError:
+            messagebox.showerror("Insert reference", "Inserting references needs Microsoft Word or Excel.", parent=self)
+            return
+        try:
+            msg = insert_into_active(self.s.folder, node_id, code)
+        except NoActiveDocument as e:
+            messagebox.showinfo("Insert reference", str(e), parent=self)
+            return
+        messagebox.showinfo("Insert reference", msg, parent=self)
+
     def _settings(self) -> None:
         from .settings import SettingsDialog
 
@@ -290,7 +309,7 @@ class BinderView(ttk.Frame):
     def _print(self) -> None:
         from .print_view import PrintDialog
 
-        PrintDialog(self, self.s)
+        PrintDialog(self, self.s, self.app, self.selected())
 
     def _break_lock(self) -> None:
         info = self.s.lock_info
@@ -318,6 +337,51 @@ class BinderView(ttk.Frame):
         pending = f"{st.changes} change(s) waiting for sync" if st.changes else "In sync"
         self.status.config(text=f"{pending}   ·   {st.orphans} orphan file(s)   ·   "
                                 f"{st.broken_refs} broken reference(s)   ·   {st.warnings} warning(s)")
+
+
+class PickDocumentDialog(tk.Toplevel):
+    """Pick the document a reference points at (SPEC §12 'Insert reference')."""
+
+    def __init__(self, master, session: BinderSession, selected: str | None):
+        super().__init__(master)
+        self.title("Insert reference")
+        self.transient(master)
+        self.choice: tuple[str, str] | None = None
+        f = ttk.Frame(self, padding=12)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Put the cursor where the reference goes in Word (or select the cell in Excel), "
+                          "then pick the document it refers to. The reference shows the document's code and "
+                          "updates itself on every sync.", style="Muted.TLabel", wraplength=480).pack(anchor="w")
+        self.tv = ttk.Treeview(f, columns=("code",), height=16, selectmode="browse")
+        self.tv.heading("#0", text="Document")
+        self.tv.heading("code", text="Code")
+        self.tv.column("code", width=90, stretch=False)
+        self.tv.pack(fill="both", expand=True, pady=8)
+        codes = session.layout().codes
+
+        def add(node, parent):
+            self.tv.insert(parent, "end", iid=node.id, text=node.text, values=(codes.get(node.id, ""),), open=True)
+            for c in node.children:
+                add(c, node.id)
+
+        for r in session.tree.roots:
+            add(r, "")
+        if selected and self.tv.exists(selected):
+            self.tv.selection_set(selected)
+            self.tv.see(selected)
+        self.codes = codes
+        self.tv.bind("<Double-Button-1>", lambda e: self._ok())
+        bf = ttk.Frame(f)
+        bf.pack(fill="x")
+        ttk.Button(bf, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(bf, text="Insert at cursor", style="Accent.TButton", command=self._ok).pack(side="right", padx=8)
+        self.grab_set()
+
+    def _ok(self) -> None:
+        sel = self.tv.selection()
+        if sel and self.codes.get(sel[0]):
+            self.choice = (sel[0], self.codes[sel[0]])
+            self.destroy()
 
 
 class AddNodeDialog(tk.Toplevel):
