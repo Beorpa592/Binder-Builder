@@ -54,6 +54,49 @@ class BinderSession:
         Manifest.create(folder, name)
         return cls(folder)
 
+    @classmethod
+    def create_from_structure(cls, source: Path | str, dest: Path | str, name: str,
+                              copy_documents: bool = False) -> "BinderSession":
+        """A new binder with another binder's structure and settings (SPEC §14 phase 5).
+
+        Node ids are kept, so references written against the old binder resolve in the new one.
+        Legacy filename overrides and copied_from are dropped (the new binder uses computed
+        names). The binder's own templates are copied. With `copy_documents`, every document
+        is copied across as a starting point (recorded in copied_from, so the plan warns when
+        the original changes); otherwise sync creates blank documents with the right headers.
+        """
+        import copy as _copy
+
+        source, dest = Path(source), Path(dest)
+        if manifest_path(dest).exists():
+            raise ManifestError(f"{dest} is already a binder")
+        src = Manifest.load(source)
+        raw = _copy.deepcopy(src.raw)
+        raw["binder"]["name"] = name
+        raw["binder"].pop("filenames", None)
+
+        def clean(nodes):
+            for n in nodes or []:
+                for key in ("filename", "folder", "copied_from"):
+                    n.pop(key, None)
+                clean(n.get("children"))
+
+        clean(raw.get("tree"))
+        dest.mkdir(parents=True, exist_ok=True)
+        Manifest(raw, manifest_path(dest)).save()
+        src_ctx = GenContext(source, src, Tree(src), compute_layout(Tree(src), src.binder))
+        if src_ctx.template_folder().is_dir():
+            dst_templates = dest / (src.binder.template_folder or ".binder/templates")
+            shutil.copytree(src_ctx.template_folder(), dst_templates, dirs_exist_ok=True)
+        session = cls(dest)
+        if copy_documents:
+            state = sync.load_state(source)["files"]
+            for e in src_ctx.layout.items():
+                rel = state.get(e.entity_id, {}).get("path") or e.rel_path
+                if (source / rel).is_file():
+                    session.fill_from_file(e.entity_id, source / rel)
+        return session
+
     @staticmethod
     def is_binder(folder: Path | str) -> bool:
         return manifest_path(Path(folder)).is_file()
@@ -285,6 +328,8 @@ class BinderSession:
             backup = backup.with_name(backup.name + "_fill")
             (backup / dest.relative_to(self.folder)).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dest, backup / dest.relative_to(self.folder))
+            sync.write_backup_index(backup, [{"path": dest.relative_to(self.folder).as_posix(), "moved_to": None}],
+                                    kind="fill")
         if source.resolve() == dest.resolve():
             raise ValueError("that file already is this document")
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -351,6 +396,9 @@ class BinderSession:
 
     def backups(self) -> list[str]:
         return sync.list_backups(self.folder)
+
+    def backup_info(self, name: str) -> dict:
+        return sync.backup_info(self.folder, name)
 
     def restore(self, backup: str) -> list[str]:
         self._check()
