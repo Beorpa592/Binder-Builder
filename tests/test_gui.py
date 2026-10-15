@@ -198,3 +198,38 @@ def test_import_wizard_end_to_end(app, tmp_path, monkeypatch):
 
     log = json.loads((legacy / ".binder" / "import.json").read_text())
     assert len(log["claimed"]) == 8 and len(log["unclaimed"]) == 1
+
+
+def test_print_dialog_exports_with_fake_exporter(app, binder, monkeypatch):
+    from binder_builder.gui import print_view
+    from binder_builder.output import merge_pdf
+
+    from .test_outputs import FakeExporter
+
+    monkeypatch.setattr(print_view, "_export",
+                        lambda folder, options: merge_pdf.export_binder(folder, options, FakeExporter()))
+    monkeypatch.setattr(print_view.messagebox, "askyesno", lambda *a, **k: False)
+    app.open_binder(binder)
+    app.session.apply(app.session.plan())
+    dlg = print_view.PrintDialog(app.view, app.session, app, "administration")
+    dlg.merged.set(True)
+    dlg.scope.set("selected")
+    dlg._run()
+    for _ in range(500):
+        _pump(app, 20)
+        if dlg.result is not None:
+            break
+    assert dlg.result is not None and dlg.result.merged.is_file()
+    assert "top-10-list" in dlg.result.documents and "media-policy" not in dlg.result.documents
+    assert "administration#cover" in dlg.result.documents
+    dlg.destroy()
+
+
+def test_pick_document_dialog(app, binder):
+    from binder_builder.gui.binder_view import PickDocumentDialog
+
+    app.open_binder(binder)
+    dlg = PickDocumentDialog(app.view, app.session, "top-10-list")
+    _pump(app)
+    dlg._ok()
+    assert dlg.choice == ("top-10-list", "A.03")
