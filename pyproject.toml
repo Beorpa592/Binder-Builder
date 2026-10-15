@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "binder-builder"
-version = "0.3.0"
+version = "0.4.0"
 description = "Keeps the Word and Excel documents in a physical binder in sync with its Table of Contents."
 requires-python = ">=3.11"
 dependencies = [

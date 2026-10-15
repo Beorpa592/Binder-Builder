@@ -38,6 +38,13 @@ def build() -> Path:
         "--hidden-import", "binder_builder.engine.generate.section_cover",
         "--hidden-import", "binder_builder.engine.generate.tabs",
         "--hidden-import", "binder_builder.engine.generate.toc",
+        # imported lazily (only when exporting or inserting references), so declare them
+        "--hidden-import", "binder_builder.office.export_pdf",
+        "--hidden-import", "binder_builder.office.insert_reference",
+        "--hidden-import", "binder_builder.office.page_count",
+        "--hidden-import", "win32com.client",
+        "--hidden-import", "pythoncom",
+        "--hidden-import", "pywintypes",
     ])
     zpath = DIST / f"BinderBuilder-{__version__}-win64.zip"
     if zpath.exists():
