@@ -23,6 +23,8 @@ class StartView(ttk.Frame):
         ttk.Button(actions, text="Open binder folder...", style="Accent.TButton",
                    command=app.choose_and_open).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="New binder...", command=app.new_binder).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="New binder from existing...", command=app.new_from_existing).pack(
+            side="left", padx=(0, 8))
         imp = ttk.Button(actions, text="Import existing folder...", command=self._import)
         imp.pack(side="left")
 
@@ -46,6 +48,7 @@ class StartView(ttk.Frame):
         footer = ttk.Frame(self)
         footer.pack(fill="x", pady=(16, 0))
         ttk.Label(footer, text=f"Version {__version__}", style="Muted.TLabel").pack(side="left")
+        ttk.Button(footer, text="Report a problem...", command=app.show_problem_report).pack(side="left", padx=12)
         self.update_frame = ttk.Frame(footer)
         self.update_frame.pack(side="right")
         if app.update_info:

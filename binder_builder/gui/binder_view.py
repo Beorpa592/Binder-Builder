@@ -116,6 +116,8 @@ class BinderView(ttk.Frame):
         self.busy = ttk.Label(bar, text="", style="Muted.TLabel")
         self.busy.pack(side="right")
         ttk.Button(bar, text="Refresh status", command=self.refresh_status).pack(side="right", padx=8)
+        ttk.Button(bar, text="Report a problem...",
+                   command=lambda: self.app.show_problem_report(self.s.folder)).pack(side="right")
 
     # ---- tree -------------------------------------------------------------------------
     def selected(self) -> str | None:

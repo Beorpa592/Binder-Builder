@@ -147,7 +147,7 @@ class SyncDialog(tk.Toplevel):
         if not backups:
             messagebox.showinfo("Restore", "There are no backups yet.", parent=self)
             return
-        dlg = RestoreDialog(self, backups)
+        dlg = RestoreDialog(self, [self.s.backup_info(b) for b in backups])
         self.wait_window(dlg)
         if not dlg.choice:
             return
@@ -164,17 +164,20 @@ class SyncDialog(tk.Toplevel):
 
 
 class RestoreDialog(tk.Toplevel):
-    def __init__(self, master, backups: list[str]):
+    def __init__(self, master, backups: list[dict]):
         super().__init__(master)
         self.title("Restore from backup")
         self.transient(master)
         self.choice: str | None = None
         f = ttk.Frame(self, padding=12)
         f.pack(fill="both", expand=True)
-        ttk.Label(f, text="Pick the sync to undo (newest first):").pack(anchor="w")
-        self.lb = tk.Listbox(f, height=12, width=48)
+        ttk.Label(f, text="Pick the change to undo (newest first):").pack(anchor="w")
+        self.lb = tk.Listbox(f, height=12, width=72)
+        kinds = {"sync": "Sync", "claims": "Claimed references", "fill": "Filled from file",
+                 "before-restore": "Before an earlier restore", "unknown": "Unknown (cannot restore)"}
         for b in backups:
-            self.lb.insert("end", b)
+            when = (b["time"] or b["name"])[:16].replace("T", " ")
+            self.lb.insert("end", f"{when}   {kinds.get(b['kind'], b['kind'])}   {b['files']} file(s)")
         self.lb.pack(fill="both", expand=True, pady=6)
         self.lb.selection_set(0)
         self.backups = backups
@@ -186,6 +189,6 @@ class RestoreDialog(tk.Toplevel):
 
     def _ok(self) -> None:
         sel = self.lb.curselection()
-        if sel:
-            self.choice = self.backups[sel[0]]
+        if sel and self.backups[sel[0]]["restorable"]:
+            self.choice = self.backups[sel[0]]["name"]
         self.destroy()

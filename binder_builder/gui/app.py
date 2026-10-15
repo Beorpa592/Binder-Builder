@@ -223,6 +223,34 @@ class App(tk.Tk):
         BinderSession.create(folder, name.strip()).close()
         self.open_binder(folder)
 
+    def new_from_existing(self) -> None:
+        source = filedialog.askdirectory(parent=self, title="Which binder's structure should the new one copy?",
+                                         mustexist=True)
+        if not source:
+            return
+        if not BinderSession.is_binder(source):
+            messagebox.showwarning(APP_NAME, "That folder is not a Binder Builder binder.", parent=self)
+            return
+        parent = filedialog.askdirectory(parent=self, title="Where should the new binder folder go?", mustexist=True)
+        if not parent:
+            return
+        name = simpledialog.askstring(APP_NAME, "Name of the new binder:", parent=self)
+        if not name or not name.strip():
+            return
+        folder = Path(parent) / name.strip()
+        if BinderSession.is_binder(folder):
+            messagebox.showwarning(APP_NAME, f"{folder} is already a binder.", parent=self)
+            return
+        copy_docs = messagebox.askyesno(
+            APP_NAME, "Copy each document across as a starting point?\n\n"
+                      "Yes: every document is copied (the originals are never changed).\n"
+                      "No: the new binder starts with blank documents that have the right headers.", parent=self)
+        BinderSession.create_from_structure(source, folder, name.strip(), copy_documents=copy_docs).close()
+        self.open_binder(folder)
+
+    def show_problem_report(self, folder: Path | None = None) -> None:
+        ProblemReport(self, folder)
+
     def close_binder(self, show_start: bool = True) -> None:
         if self.session is not None:
             self.session.close()
@@ -261,6 +289,34 @@ class App(tk.Tk):
 
         updater.launch_swap_and_exit(staged)
         self.destroy()
+
+
+class ProblemReport(tk.Toplevel):
+    """Report a problem: a copyable summary (versions, lock, recent syncs, recent errors)."""
+
+    def __init__(self, master, folder: Path | None):
+        from ..diagnostics import report
+
+        super().__init__(master)
+        self.title("Report a problem")
+        self.transient(master)
+        self.geometry("760x520")
+        f = ttk.Frame(self, padding=12)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Copy this into an email to whoever looks after Binder Builder. It contains no "
+                          "document content.", style="Muted.TLabel", wraplength=700).pack(anchor="w")
+        self.text = tk.Text(f, font=("Consolas", 9), wrap="none")
+        self.text.pack(fill="both", expand=True, pady=8)
+        self.text.insert("1.0", report(folder))
+        bf = ttk.Frame(f)
+        bf.pack(fill="x")
+        ttk.Button(bf, text="Close", command=self.destroy).pack(side="right")
+        ttk.Button(bf, text="Copy", style="Accent.TButton", command=self._copy).pack(side="right", padx=8)
+        ttk.Button(bf, text="Open log folder", command=lambda: os.startfile(str(app_data_dir()))).pack(side="left")
+
+    def _copy(self) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(self.text.get("1.0", "end"))
 
 
 def main() -> None:
