@@ -100,3 +100,32 @@ There is also the CLI `import` command and a legacy fixture (`tests/fixtures/leg
 
 **Deviations:** DEVIATIONS.md items 56–67. The one with real consequences:
 - Locked headers can't be inferred, so lock licensed forms before the first sync (#63).
+
+## Phase 4: Outputs (tag `phase-4`, version 0.4.0)
+
+**Built:** `engine/pdfdoc.py` (PDF-item header overlay), `office/export_pdf.py` (COM export
+with watchdog), `office/page_count.py`, `office/insert_reference.py`, `output/merge_pdf.py`
+(per-document and merged PDF, bookmarks, page labels, continuous running numbers, the TOC
+Page column), `output/print_manifest.py` (manifest, changed-only printing), a working Print
+& export screen with Send to Packet Printer, and Insert reference in the binder screen.
+
+**Acceptance (all passing, 103 tests total):**
+- In continuous mode the merged PDF has an unnumbered cover and the TOC as page 1 (stamped
+  and page-labelled). Every following page carries the correct running number. There is a
+  nested bookmark for every section, heading and document, each pointing at the document's
+  first page. The TOC's Page column matches the real starting pages, and the next sync
+  plan is empty.
+- After marking printed, an author edit plus a swap of A.06 and A.07 gives a manifest that
+  lists exactly the documents whose printed output changed (A.01, A.02, A.06, A.07, TOC,
+  CKL, A.00) and nothing else.
+- Real Word and Excel export a small binder to a merged, continuously numbered PDF, with no
+  source document modified. Insert reference writes a live control into a real Word
+  document and a formula into a real Excel cell, and both follow a later renumber.
+- PDF items get the header overlay, renumbering never stacks it, a replaced scan becomes
+  the new original, and a locked PDF stays byte-for-byte untouched.
+
+**Found and fixed against real Office:** Word crashed after `ExportAsFixedFormat` (switched to
+`SaveAs2`), a hidden dialog could hang the app forever (watchdog added), and Excel refused to
+print blank workbooks.
+
+**Deviations:** DEVIATIONS.md items 68–80.

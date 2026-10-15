@@ -123,3 +123,33 @@ choice and the reason for it. Ben can overrule any of them.
 ### Fill from any source (§9.3)
 66. **`copied_from.source_path`** records the exact file copied, and drift is that file's hash against the one recorded. Filling a position that already has a file needs confirmation, and the current file is backed up (`<ts>_fill`). Re-copy replaces this binder's copy wholesale after a backup. If the source is inside another binder, `binder_path` and `id` are filled from that binder's state.
 67. **CLI:** `python -m binder_builder import <folder> [--accept] [--claim-all]`.
+
+## Phase 4
+
+### Export (§11, §2)
+68. **Word exports with `SaveAs2(FileFormat=wdFormatPDF)`, not `ExportAsFixedFormat`.** On this machine's Word build, `ExportAsFixedFormat` crashes Word on the next `Close`; the test against real Word showed it. Excel uses `ExportAsFixedFormat`.
+69. **A per-document watchdog (180 s).** If Word or Excel stops responding (typically a hidden dialog), the exporter ends the automation process it started itself and reports that file as failed. It identifies its own process by the `/Automation -Embedding` command line and the before/after process list, so a user's open Word or Excel is never touched. The batch then carries on with a fresh instance. A disconnected Office process is retried once.
+70. **Blank workbooks** (just created, nothing typed yet) would make Excel refuse to print ("nothing to print"). In the read-only copy Excel has open, never saved, the exporter puts a space in A1 of each empty sheet, so the PDF shows one page with the header.
+71. **Page counts come from the PDF Word or Excel exported** (`pdf_pages`), because that is exactly what prints. `office/page_count.office_pages` asks Office directly and is kept for quick estimates.
+72. **Per-document PDFs are always made**, because they are the merge's inputs. They're cached: a document is re-exported only when its file hash changes.
+
+### Merged PDF
+73. **Order and contents.** Binder cover, TOC, CKL, then every section cover and document in TOC order. Excluded (`included: false`) documents and the tab sheet are left out (tab labels print on tab stock). "Selected" scope covers the node, everything inside it and section covers.
+74. **Page labels** are set as well as stamped numbers, so a PDF viewer shows "Cover" then 1, 2, 3 from the TOC onward. Clarifying headings get a bookmark too, above their sections.
+75. **Continuous mode needs a synced binder.** The merged export refuses with "Sync first" if the plan isn't empty, so page numbers can't describe a TOC that differs from the binder. The running start page of each code is saved in `state.json["pages"]`. A normal sync then regenerates the TOC with its Page column (with backup), the TOC is re-exported, and this repeats (up to 3 rounds) until the TOC's own length settles. Sync always renders the TOC with the saved pages, so the next plan is empty.
+76. **Running numbers** are stamped 14 pt from the bottom, centred. Word footers put `Page X of Y` on the right (#13), so the two never overlap.
+
+### Printing
+77. **The print manifest** is a top-level JSON array of `{path, pdf_path, code, title, pages, changed_since_last_print}` with absolute paths, in TOC order, covering the chosen scope. "Send to Packet Printer" exports with a manifest and launches Packet Printer with the manifest path, if its location is set (asked once, stored in `%APPDATA%\BinderBuilder\settings.json`). It then asks before marking the documents as printed.
+78. **"Changed since last print" compares what prints, not the file's bytes.** It uses:
+    - Word: body plus header and footer.
+    - Excel: visible sheets, with `=bb_` formulas shown as the codes they display.
+    - PDF: the file itself.
+
+    Without this, every workbook would count as changed whenever any code anywhere changed, because its hidden `_binder` sheet does.
+
+### PDF items (§5.3)
+79. **The original is kept as `.binder/pdf_sources/<id>.source.pdf`** (by id rather than name, so renames don't matter). A stamp key (original hash plus header text) in `state.json` decides when to restamp. If the file on disk no longer matches what the last sync wrote, someone replaced the PDF, so it becomes the new original and the previous original goes into that sync's backup. The invariant requires the same page count, with each stamped page still containing all of its source page's text. Rotated pages are not specially handled; the overlay is drawn in the page's unrotated frame.
+
+### Insert Reference (§6.1, §12)
+80. **Word:** a locked plain-text content control tagged `bb:ref:<id>` is inserted at the cursor of the active document (`GetActiveObject`). The user is told if that document isn't in this binder. **Excel:** `=bb_<id>` goes into the active cell. It shows the code once the workbook has been synced (sync defines the name). No name is added through COM, so all writes to the `_binder` sheet stay with sync.
