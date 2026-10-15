@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from ruamel.yaml import YAML
@@ -134,23 +134,33 @@ def manifest_path(folder: Path) -> Path:
     return Path(folder) / BINDER_DIR / MANIFEST_NAME
 
 
-def upgrade(raw: CommentedMap) -> bool:
-    """Upgrade an older manifest in place. Returns True if anything changed."""
+# Schema upgrades: UPGRADES[n] turns a format_version n manifest into n + 1, editing the
+# round-trip document in place (so comments survive). Bump FORMAT_VERSION and register a step
+# whenever the schema changes; old binders are upgraded the next time they are opened.
+UPGRADES: dict[int, Callable[[CommentedMap], None]] = {}
+
+
+def upgrade(raw: CommentedMap) -> int | None:
+    """Upgrade an older manifest in place. Returns the original version if it changed, else None."""
     version = raw.get("format_version")
     if version is None:
         raise ManifestError("manifest has no format_version")
-    if not isinstance(version, int):
+    if not isinstance(version, int) or isinstance(version, bool):
         raise ManifestError(f"format_version must be an integer, got {version!r}")
     if version > FORMAT_VERSION:
         raise ManifestError(
-            f"manifest format_version {version} is newer than this app supports ({FORMAT_VERSION}); update Binder Builder"
+            f"this binder was saved by a newer Binder Builder (format {version}; this version reads up to "
+            f"{FORMAT_VERSION}). Update Binder Builder to open it."
         )
-    changed = False
-    # Future upgrades go here, one step at a time: `if version == 1: ...; version = 2`.
-    if raw["format_version"] != version:
+    original = version
+    while version < FORMAT_VERSION:
+        step = UPGRADES.get(version)
+        if step is None:
+            raise ManifestError(f"no upgrade path from format_version {version}")
+        step(raw)
+        version += 1
         raw["format_version"] = version
-        changed = True
-    return changed
+    return original if version != original else None
 
 
 NEW_BINDER_TEMPLATE = """# Binder Builder manifest. Edit through the app; hand edits are allowed but validated.
@@ -189,12 +199,16 @@ class Manifest:
         path = manifest_path(Path(folder))
         if not path.exists():
             raise ManifestError(f"no manifest at {path}")
-        raw = _yaml().load(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        raw = _yaml().load(text)
         if not isinstance(raw, CommentedMap):
             raise ManifestError(f"{path} is not a YAML mapping")
-        upgraded = upgrade(raw)
+        upgraded_from = upgrade(raw)
         m = cls(raw, path)
-        if upgraded:
+        if upgraded_from is not None:
+            backup = path.with_name(f"binder.v{upgraded_from}.yaml.bak")
+            if not backup.exists():
+                backup.write_text(text, encoding="utf-8")  # the original, before the upgrade
             m.save()
         return m
 
