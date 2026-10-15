@@ -582,6 +582,8 @@ def apply_claims(folder: Path | str, approved: list[refs.Hit], unapproved: list[
             log["unclaimed"] = [asdict(h) for h in unapproved] + [dict(asdict(h), reason=why) for h, why in result.skipped]
             log["claimed"] = log.get("claimed", []) + [asdict(h) for h in result.claimed]
             log_path.write_text(json.dumps(log, indent=2), encoding="utf-8")
+        if by_file:
+            sync.write_backup_index(backup, [{"path": rel, "moved_to": None} for rel in by_file], kind="claims")
         user, machine = sync.current_user()
         storage.append_log({"time": datetime.now().isoformat(timespec="seconds"), "user": user, "machine": machine,
                             "claims": len(result.claimed), "skipped": len(result.skipped), "backup": backup.name})

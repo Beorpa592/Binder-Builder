@@ -463,6 +463,25 @@ def _backup_dir(folder: Path) -> Path:
     return d
 
 
+def write_backup_index(backup: Path, files: list[dict], created: list[str] | tuple = (), kind: str = "sync") -> None:
+    """Every backup folder describes itself, so any of them can be restored."""
+    backup.mkdir(parents=True, exist_ok=True)
+    (backup / "index.json").write_text(json.dumps({
+        "kind": kind, "time": datetime.now().isoformat(timespec="seconds"),
+        "files": files, "created": list(created)}, indent=2), encoding="utf-8")
+
+
+def backup_info(folder: Path | str, name: str) -> dict:
+    """Name, kind, time and file counts of one backup, for the restore screen."""
+    d = Path(folder) / BINDER_DIR / BACKUPS / name
+    try:
+        index = json.loads((d / "index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"name": name, "kind": "unknown", "time": "", "files": 0, "created": 0, "restorable": False}
+    return {"name": name, "kind": index.get("kind", "sync"), "time": index.get("time", ""),
+            "files": len(index.get("files", [])), "created": len(index.get("created", [])), "restorable": True}
+
+
 def _remove_empty_dirs(folder: Path, rels: set[str]) -> None:
     """Remove folders left empty by moves. Only empty directories; never files."""
     for rel in sorted(rels, key=lambda r: -r.count("/")):
@@ -537,11 +556,9 @@ def apply(p: Plan, force_lock: bool = False) -> ApplyResult:
                 shutil.copy2(stash, dest)
         created = [fw for fw in p.work.values() if fw.current is None]
         if index or created:
-            backup.mkdir(parents=True, exist_ok=True)
-            (backup / "index.json").write_text(json.dumps({
-                "files": index, "created": [fw.target for fw in created]}, indent=2), encoding="utf-8")
-            if state_path(folder).exists():
-                shutil.copy2(state_path(folder), backup / "_state.json")
+            write_backup_index(backup, index, [fw.target for fw in created])
+            # the state before this sync (the default empty state on a first sync), so restore puts it back
+            (backup / "_state.json").write_text(json.dumps(load_state(folder), indent=2), encoding="utf-8")
             result.backup = backup.name
 
         # 2. moves: two-phase through temporary names so chains and swaps never collide
@@ -694,12 +711,17 @@ def restore(folder: Path | str, backup: str) -> list[str]:
     try:
         safety = _backup_dir(folder)
         safety = safety.with_name(safety.name + "_before-restore")
+        saved = []
         for entry in index["files"]:
             for rel in filter(None, (entry["path"], entry.get("moved_to"))):
                 if (folder / rel).is_file():
                     d = safety / rel
                     d.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(folder / rel, d)
+                    saved.append({"path": rel, "moved_to": None})
+        write_backup_index(safety, saved, kind="before-restore")
+        if state_path(folder).exists():
+            shutil.copy2(state_path(folder), safety / "_state.json")
         for entry in index["files"]:
             orig, moved = entry["path"], entry.get("moved_to")
             if moved and (folder / moved).is_file() and not (folder / orig).exists():
@@ -708,10 +730,15 @@ def restore(folder: Path | str, backup: str) -> list[str]:
             (folder / orig).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src / orig, folder / orig)
             restored.append(orig)
+        # kept PDF originals (pdf_sources) that the sync replaced
+        stash_dir = src / BINDER_DIR / pdfdoc.SOURCES
+        if stash_dir.is_dir():
+            for f in stash_dir.iterdir():
+                dst = folder / BINDER_DIR / pdfdoc.SOURCES / f.name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dst)
         if (src / "_state.json").exists():
             shutil.copy2(src / "_state.json", state_path(folder))
-        else:
-            save_state(folder, {**load_state(folder), "files": {}})
         user, machine = current_user()
         storage.append_log({"time": datetime.now().isoformat(timespec="seconds"), "user": user,
                             "machine": machine, "restore": backup, "files": restored})
